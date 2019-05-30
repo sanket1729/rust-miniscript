@@ -114,6 +114,65 @@ impl<P: ToPublicKey> Satisfiable<P> for AstElem<P> {
     }
 }
 
+impl<P: ToPublicKey> AstElem<P>{
+//
+//    fn interpret(&self, witness: &[Vec<u8>], mut keyfn: Option<&mut F>,
+//                 mut hashfn: Option<&mut H>, age: u32)
+//    -> (Vec<P>, Vec<Vec<u8>>, Vec<usize>)
+//    {
+//        let ret = (vec![], vec![vec![]], vec![]);
+//        match *self {
+//            AstElem::Pk(ref p) |
+//            AstElem::PkV(ref p) |
+//            AstElem::PkQ(ref p) |
+//            AstElem::PkW(ref p) => {
+//                if kry
+//                (vec![p], vec![vec![]], vec![])
+//            }
+//            AstElem::Multi(k, ref keys) |
+//            AstElem::MultiV(k, ref keys) => satisfy_checkmultisig(k, keys, keyfn),
+//            AstElem::TimeT(t) |
+//            AstElem::TimeV(t) |
+//            AstElem::TimeF(t) => satisfy_csv(t, age),
+//            AstElem::Time(t) |
+//            AstElem::TimeW(t) => satisfy_csv(t, age).map(|_| vec![vec![1]]),
+//            AstElem::HashT(h) |
+//            AstElem::HashV(h) |
+//            AstElem::HashW(h) => satisfy_hashequal(h, hashfn),
+//            AstElem::True(ref sub) |
+//            AstElem::Wrap(ref sub) => sub.satisfy(keyfn, hashfn, age),
+//            AstElem::Likely(ref sub) => {
+//                let mut ret = sub.satisfy(keyfn, hashfn, age)?;
+//                ret.push(vec![0]);
+//                Ok(ret)
+//            },
+//            AstElem::Unlikely(ref sub) => {
+//                let mut ret = sub.satisfy(keyfn, hashfn, age)?;
+//                ret.push(vec![1]);
+//                Ok(ret)
+//            },
+//            AstElem::AndCat(ref left, ref right) |
+//            AstElem::AndBool(ref left, ref right) |
+//            AstElem::AndCasc(ref left, ref right) => {
+//                let mut ret = right.satisfy(keyfn.rb(), hashfn.rb(), age)?;
+//                ret.extend(left.satisfy(keyfn, hashfn, age)?);
+//                Ok(ret)
+//            },
+//            AstElem::OrBool(ref left, ref right) => satisfy_parallel_or(&*left, &*right, keyfn, hashfn, age),
+//            AstElem::OrCasc(ref left, ref right) |
+//            AstElem::OrCont(ref left, ref right) => satisfy_cascade_or(&*left, &*right, keyfn, hashfn, age),
+//            AstElem::OrKey(ref left, ref right) |
+//            AstElem::OrKeyV(ref left, ref right) |
+//            AstElem::OrIf(ref left, ref right) |
+//            AstElem::OrIfV(ref left, ref right) => satisfy_switch_or(&*left, &*right, keyfn, hashfn, age),
+//            AstElem::OrNotif(ref left, ref right) => satisfy_switch_or(&*right, &*left, keyfn, hashfn, age),
+//            AstElem::Thresh(k, ref subs) |
+//            AstElem::ThreshV(k, ref subs) => satisfy_threshold(k, subs, keyfn, hashfn, age),
+//        }
+//    }
+}
+
+
 impl<P: ToPublicKey> Dissatisfiable<P> for AstElem<P> {
     fn dissatisfy(&self) -> Vec<Vec<u8>> {
         match *self {
@@ -182,6 +241,11 @@ impl<P: ToPublicKey> Dissatisfiable<P> for AstElem<P> {
 fn satisfy_cost(s: &[Vec<u8>]) -> usize {
     s.iter().map(|s| 1 + s.len()).sum()
 }
+
+
+/// verofy sig
+
+//fn verify_sig()
 
 /// Helper function that produces a checksig(verify) satisfaction
 fn satisfy_checksig<P, F>(pk: &P, keyfn: Option<&mut F>) -> Result<Vec<Vec<u8>>, Error>

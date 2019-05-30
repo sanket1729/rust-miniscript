@@ -284,11 +284,16 @@ mod tests {
     }
 
     fn roundtrip(tree: &Miniscript<PublicKey>, s: &str) {
+        println!("{:?} \n \n",tree);
         let ser = tree.encode();
+
+        println!("{:?} \n \n", ser);
         assert_eq!(ser.len(), tree.script_size());
+
         assert_eq!(ser.to_string(), s);
         let deser = Miniscript::parse(&ser).expect("deserialize result of serialize");
         assert_eq!(tree, &deser);
+        println!("{:?} \n \n",deser);
     }
 
     #[test]

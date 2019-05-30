@@ -27,6 +27,7 @@ pub mod compiler;
 
 use std::{cmp, fmt, mem};
 use std::str::FromStr;
+use std::collections::HashSet;
 
 use bitcoin_hashes::hex::FromHex;
 use bitcoin_hashes::sha256;
@@ -397,6 +398,7 @@ impl<P> AbstractPolicy<P> {
         }
     }
 
+
     /// Count the minimum number of public keys for which signatures could be used
     /// to satisfy the policy.
     pub fn minimum_n_keys(&self) -> usize {
@@ -416,6 +418,42 @@ impl<P> AbstractPolicy<P> {
             }
         }
     }
+}
+
+impl <P: Eq + std::hash::Hash + Clone + std::fmt::Debug> AbstractPolicy<P> {
+    /// Count the number of public keys referenced in a policy. Note that duplicate keys
+    /// will be double-counted.
+    pub fn contains_duplicate_keys_helper(&self, pubkeys_set: &mut HashSet<P>) -> bool {
+        //println!("{:?}", pubkeys_set);
+        match *self {
+            AbstractPolicy::Key(ref pk) => {
+                //HashSet returns false if the element is already present
+                let ret = pubkeys_set.insert(pk.clone());
+                println!("{:?}", ret);
+                println!("{:?}", pubkeys_set);
+                ret
+            }
+            AbstractPolicy::Hash(..) | AbstractPolicy::Time(..) => true,
+            AbstractPolicy::Threshold(_, ref subs) => {
+                let mut ret = true;
+                for sub in subs.iter(){
+                    ret = ret && sub.contains_duplicate_keys_helper(pubkeys_set);
+                }
+                ret
+            }
+            AbstractPolicy::And(ref x, ref y) | AbstractPolicy::Or(ref x, ref y) => {
+                let mut ret = x.contains_duplicate_keys_helper(pubkeys_set);
+                ret = ret && y.contains_duplicate_keys_helper(pubkeys_set);
+                ret
+            }
+        }
+    }
+
+    pub fn contains_duplicate_keys(&self) -> bool {
+        let mut pubkeys_set = HashSet::new();
+        !self.contains_duplicate_keys_helper(&mut pubkeys_set)
+    }
+
 }
 
 impl<P: Ord> AbstractPolicy<P> {
@@ -462,7 +500,7 @@ mod tests {
 
     use super::*;
 
-    #[cfg(feature = "compiler")]
+    //#[cfg(feature = "compiler")]
     fn pubkeys_and_a_sig(n: usize) -> (Vec<PublicKey>, secp256k1::Signature) {
         let mut ret = Vec::with_capacity(n);
         let secp = secp256k1::Secp256k1::new();
@@ -635,6 +673,32 @@ mod tests {
         assert!(Policy::<PublicKey>::from_str("pk(020000000000000000000000000000000000000000000000000000000000000002)").is_ok());
     }
 
+    #[test]
+    fn dup_keys(){
+        let (keys, _sig) = pubkeys_and_a_sig(10);
+        let policy = Policy::AsymmetricOr(
+            Box::new(Policy::Multi(3, keys[0..5].to_owned())),
+            Box::new(Policy::And(
+                Box::new(Policy::Time(10000)),
+                Box::new(Policy::Multi(2, keys[4..7].to_owned())),
+            )),
+        );
+
+        let abs = policy.abstract_policy();
+        assert_eq!(true,abs.contains_duplicate_keys());
+
+        let policy = Policy::AsymmetricOr(
+            Box::new(Policy::Multi(1, keys[0..5].to_owned())),
+            Box::new(Policy::And(
+                Box::new(Policy::Time(10000)),
+                Box::new(Policy::Multi(3, keys[5..9].to_owned())),
+            )),
+        );
+
+        let abs = policy.abstract_policy();
+        println!("{:?} is the asnwer",abs.contains_duplicate_keys());
+        assert_eq!(false, abs.contains_duplicate_keys());
+    }
     #[test]
     fn abstract_policy() {
         let policy = Policy::<String>::from_str("pk()").unwrap();

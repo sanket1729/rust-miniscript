@@ -196,20 +196,31 @@ impl<P: ToPublicKey> Descriptor<P> {
             Descriptor::Wpkh(..) => Script::new(),
             // segwit+p2sh
             Descriptor::ShWpkh(ref pk) => {
+//                println!("{:?}",Script::new();
                 let addr = bitcoin::Address::p2wpkh(
                     &pk.to_public_key(),
                     bitcoin::Network::Bitcoin,
                 );
+//                println!("{:?}", addr);
                 let redeem_script = addr.script_pubkey();
-                script::Builder::new()
-                    .push_slice(&redeem_script[..])
-                    .into_script()
+//                println!("{:?}", redeem_script);
+                let temp = script::Builder::new()
+                    .push_slice(&redeem_script[..]);
+//                println!("{:?}", temp);
+                let temp = temp.into_script();
+//                println!("{:?}", temp);
+                temp
             },
             Descriptor::ShWsh(ref d) => {
+                //println!("{:?}",d);
                 let witness_script = d.encode();
-                script::Builder::new()
-                    .push_slice(&witness_script.to_v0_p2wsh()[..])
-                    .into_script()
+//                println!("{:?}",witness_script);
+                let temp = script::Builder::new()
+                    .push_slice(&witness_script.to_v0_p2wsh()[..]);
+//                println!("{:?}", temp);
+                let temp = temp.into_script();
+//                println!("{:?}",temp);
+                temp
             },
         }
     }
@@ -250,14 +261,17 @@ impl<P: ToPublicKey> Descriptor<P> {
     {
         fn witness_to_scriptsig(witness: &[Vec<u8>]) -> Script {
             let mut b = script::Builder::new();
+//            println!("{:?} is witness", witness);
             for wit in witness {
                 if let Ok(n) = script::read_scriptint(wit) {
                     b = b.push_int(n);
+                    println!("{:?}",wit);
                 } else {
                     b = b.push_slice(wit);
                 }
             }
-            b.into_script()
+            let temp = b.into_script();
+            temp
         }
 
         match *self {
@@ -265,6 +279,7 @@ impl<P: ToPublicKey> Descriptor<P> {
                 txin.script_sig = witness_to_scriptsig(
                     &d.satisfy(sigfn, hashfn, age)?,
                 );
+//                println!("{:?} is script sig", txin.script_sig);
                 txin.witness = vec![];
                 Ok(())
             },
@@ -421,6 +436,7 @@ impl<P: fmt::Debug + FromStr> expression::FromTree for Descriptor<P>
 {
     /// Parse an expression tree into a descriptor
     fn from_tree(top: &expression::Tree) -> Result<Descriptor<P>, Error> {
+//        println!("{:?}", top);
         match (top.name, top.args.len() as u32) {
             ("pkh", 1) => expression::terminal(
                 &top.args[0],
@@ -450,6 +466,7 @@ impl<P: fmt::Debug + FromStr> expression::FromTree for Descriptor<P>
             ("wsh", 1) => expression::unary(top, Descriptor::Wsh),
             _ => {
                 let sub = expression::FromTree::from_tree(&top)?;
+//                println!("{:?} s", sub);
                 Ok(Descriptor::Bare(sub))
             }
         }
@@ -469,7 +486,9 @@ impl<P: fmt::Debug + FromStr> FromStr for Descriptor<P>
         }
 
         let top = expression::Tree::from_str(s)?;
-        expression::FromTree::from_tree(&top)
+        let temp = expression::FromTree::from_tree(&top);
+//        println!("{:?} te", temp);
+        temp
     }
 }
 
@@ -589,6 +608,8 @@ mod tests {
         let pk = Descriptor::<PublicKey>::from_str(
             "pk(020000000000000000000000000000000000000000000000000000000000000002)"
         ).unwrap();
+        println!("{:?} pk", pk);
+        println!("{:?} pubkey", pk.script_pubkey());
         assert_eq!(
             pk.script_pubkey(),
             bitcoin::Script::from(vec![
@@ -605,6 +626,8 @@ mod tests {
         let pkh = Descriptor::<PublicKey>::from_str(
             "pkh(020000000000000000000000000000000000000000000000000000000000000002)"
         ).unwrap();
+        println!("{:?} pkh", pkh);
+        println!("{:?} pubhkey", pkh.script_pubkey());
         assert_eq!(
             pkh.script_pubkey(),
             script::Builder::new()
@@ -625,6 +648,8 @@ mod tests {
         let wpkh = Descriptor::<PublicKey>::from_str(
             "wpkh(020000000000000000000000000000000000000000000000000000000000000002)"
         ).unwrap();
+        println!("{:?} wpkh",wpkh);
+        println!("{:?} wpkh pubkey",wpkh.script_pubkey());
         assert_eq!(
             wpkh.script_pubkey(),
             script::Builder::new()
@@ -642,6 +667,9 @@ mod tests {
         let shwpkh = Descriptor::<PublicKey>::from_str(
             "sh(wpkh(020000000000000000000000000000000000000000000000000000000000000002))"
         ).unwrap();
+
+        println!("{:?} shwpkh", shwpkh);
+        println!("{:?} shwpkh pubkey", shwpkh.script_pubkey());
         assert_eq!(
             shwpkh.script_pubkey(),
             script::Builder::new()
@@ -660,6 +688,8 @@ mod tests {
         let sh = Descriptor::<PublicKey>::from_str(
             "sh(pk(020000000000000000000000000000000000000000000000000000000000000002))"
         ).unwrap();
+        println!("{:?} sh", sh);
+        println!("{:?} sh pubkey", sh.script_pubkey());
         assert_eq!(
             sh.script_pubkey(),
             script::Builder::new()
@@ -678,6 +708,8 @@ mod tests {
         let wsh = Descriptor::<PublicKey>::from_str(
             "wsh(pk(020000000000000000000000000000000000000000000000000000000000000002))"
         ).unwrap();
+        println!("{:?} wsh", wsh);
+        println!("{:?} wsh pubkey", wsh.script_pubkey());
         assert_eq!(
             wsh.script_pubkey(),
             script::Builder::new()
@@ -695,6 +727,8 @@ mod tests {
         let shwsh = Descriptor::<PublicKey>::from_str(
             "sh(wsh(pk(020000000000000000000000000000000000000000000000000000000000000002)))"
         ).unwrap();
+        println!("{:?} shwsh", shwsh);
+        println!("{:?} shwsh pubkey", shwsh.script_pubkey());
         assert_eq!(
             shwsh.script_pubkey(),
             script::Builder::new()
@@ -736,8 +770,11 @@ mod tests {
             }
         };
 
+        println!("{:?} is sig", sig);
+        println!("{:?} is sigser", sigser);
         let ms = Miniscript(astelem::AstElem::Pk(pk));
-
+        println!("{:?} is ms encoded",ms.encode());
+        println!("{:?} is ms", ms);
         let mut txin = bitcoin::TxIn {
             previous_output: bitcoin::OutPoint::default(),
             script_sig: bitcoin::Script::new(),
@@ -745,6 +782,7 @@ mod tests {
             witness: vec![],
         };
         let bare = Descriptor::Bare(ms.clone());
+        println!("{:?} is bare", bare);
 
         bare.satisfy(
             &mut txin,
@@ -752,6 +790,7 @@ mod tests {
             NO_HASHES,
             0,
         ).expect("satisfaction to succeed");
+
         assert_eq!(
             txin,
             bitcoin::TxIn {
@@ -763,9 +802,11 @@ mod tests {
                 witness: vec![],
             }
         );
+        println!("{:?} pk script sig", txin.script_sig);
         assert_eq!(bare.unsigned_script_sig(), bitcoin::Script::new());
 
         let pkh = Descriptor::Pkh(pk);
+        println!("{:?} is pkh", pkh);
         pkh.satisfy(
             &mut txin,
             Some(&sigfn),
@@ -784,9 +825,11 @@ mod tests {
                 witness: vec![],
             }
         );
+        println!("{:?} pkh script sig", txin.script_sig);
         assert_eq!(pkh.unsigned_script_sig(), bitcoin::Script::new());
 
         let wpkh = Descriptor::Wpkh(pk);
+        println!("{:?} is wpkh", wpkh);
         wpkh.satisfy(
             &mut txin,
             Some(&sigfn),
@@ -805,9 +848,12 @@ mod tests {
                 ],
             }
         );
+
+        println!("{:?} wpkh witness", txin.witness);
         assert_eq!(wpkh.unsigned_script_sig(), bitcoin::Script::new());
 
         let shwpkh = Descriptor::ShWpkh(pk);
+        println!("{:?} is shwpkh", shwpkh);
         shwpkh.satisfy(
             &mut txin,
             Some(&sigfn),
@@ -841,7 +887,11 @@ mod tests {
                 .into_script()
         );
 
+        println!("{:?} shwpkh witness", txin.witness);
+        println!("{:?} shwpkh script sig", txin.script_sig);
+
         let sh = Descriptor::Sh(ms.clone());
+        println!("{:?} is sh", sh);
         sh.satisfy(
             &mut txin,
             Some(&sigfn),
@@ -861,8 +911,12 @@ mod tests {
             }
         );
         assert_eq!(sh.unsigned_script_sig(), bitcoin::Script::new());
+        println!("{:?} sh witness", txin.witness);
+        println!("{:?} sh script sig", txin.script_sig);
 
         let wsh = Descriptor::Wsh(ms.clone());
+
+        println!("{:?} is wsh", wsh);
         wsh.satisfy(
             &mut txin,
             Some(&sigfn),
@@ -883,7 +937,11 @@ mod tests {
         );
         assert_eq!(wsh.unsigned_script_sig(), bitcoin::Script::new());
 
+        println!("{:?} wsh witness", txin.witness);
+        println!("{:?} wsh script sig", txin.script_sig);
+
         let shwsh = Descriptor::ShWsh(ms.clone());
+        println!("{:?} is shwsh", shwsh);
         shwsh.satisfy(
             &mut txin,
             Some(&sigfn),
@@ -910,6 +968,8 @@ mod tests {
                 .push_slice(&ms.encode().to_v0_p2wsh()[..])
                 .into_script()
         );
+        println!("{:?} shwsh witness", txin.witness);
+        println!("{:?} shwsh script sig", txin.script_sig);
     }
 }
 

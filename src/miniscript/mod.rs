@@ -27,7 +27,7 @@
 #[cfg(feature = "serde")] use serde::{de, ser};
 use std::{fmt, str};
 
-use bitcoin;
+use ::{bitcoin, AstElem};
 use bitcoin::blockdata::script;
 use bitcoin_hashes::hash160;
 
@@ -44,10 +44,25 @@ use ToPublicKeyHash;
 use self::lex::{lex, TokenIter};
 use self::satisfy::{Satisfiable, Satisfier};
 use self::types::Property;
+use miniscript::types::Type;
+use miniscript::types::extra_props::ExtData;
+use std::path::Component::Prefix;
 
 /// Top-level script AST type
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Miniscript<Pk, Pkh=hash160::Hash>(astelem::AstElem<Pk, Pkh>);
+
+/// Top-level script AST type
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Miniscript2<Pk, Pkh=hash160::Hash>{
+    ///A node in the Abstract Syntax Tree(
+    node: astelem::AstElem<Pk, Pkh>,
+    ///The correctness and malleability type information for the AST node
+    ty: types::Type,
+    ///Additional information helpful for extra analysis.
+    ext: types::extra_props::ExtData
+}
+
 
 impl<Pk, Pkh> From<astelem::AstElem<Pk, Pkh>> for Miniscript<Pk, Pkh>
 where

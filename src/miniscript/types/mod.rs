@@ -14,6 +14,7 @@
 
 pub mod correctness;
 pub mod malleability;
+pub mod extra_props;
 
 use std::{error, fmt};
 
@@ -218,19 +219,6 @@ where
     }
 }
 
-/// Whether a fragment is OK to be used in non-segwit scripts
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub enum LegacySafe {
-    /// The fragment can be used in pre-segwit contexts without concern
-    /// about malleability attacks/unbounded 3rd-party fee stuffing. This
-    /// means it has no `pk_h` constructions (cannot estimate public key
-    /// size from a hash) and no `d:`/`or_i` constructions (cannot control
-    /// the size of the switch input to `OP_IF`)
-    LegacySafe,
-    /// This fragment can only be safely used with Segwit
-    SegwitOnly,
-}
-
 /// Structure representing the type of a Miniscript fragment, including all
 /// properties relevant to the main codebase
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -368,7 +356,7 @@ pub trait Property: Sized {
     fn and_or(a: Self, b: Self, c: Self) -> Result<Self, ErrorKind>;
 
     fn threshold<S>(k: usize, n: usize, sub_ck: S) -> Result<Self, ErrorKind>
-    where S: FnMut(usize) -> Result<Self, ErrorKind>;
+        where S: FnMut(usize) -> Result<Self, ErrorKind>;
 
     /// Compute the type of a fragment, given a function to look up
     /// the types of its children, if available and relevant for the
@@ -377,10 +365,10 @@ pub trait Property: Sized {
         fragment: &AstElem<Pk, Pkh>,
         mut child: C,
     ) -> Result<Self, Error<Pk, Pkh>>
-    where
-        C: FnMut(usize) -> Option<Self>,
-        Pk: Clone,
-        Pkh: Clone,
+        where
+            C: FnMut(usize) -> Option<Self>,
+            Pk: Clone,
+            Pkh: Clone,
     {
         let mut get_child = |sub, n| child(n)
             .map(Ok)
@@ -435,19 +423,19 @@ pub trait Property: Sized {
             AstElem::Ripemd160(..) => Ok(Self::from_ripemd160()),
             AstElem::Hash160(..) => Ok(Self::from_hash160()),
             AstElem::Alt(ref sub)
-                => wrap_err(Self::cast_alt(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_alt(get_child(sub, 0)?)),
             AstElem::Swap(ref sub)
-                => wrap_err(Self::cast_swap(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_swap(get_child(sub, 0)?)),
             AstElem::Check(ref sub)
-                => wrap_err(Self::cast_check(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_check(get_child(sub, 0)?)),
             AstElem::DupIf(ref sub)
-                => wrap_err(Self::cast_dupif(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_dupif(get_child(sub, 0)?)),
             AstElem::Verify(ref sub)
-                => wrap_err(Self::cast_verify(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_verify(get_child(sub, 0)?)),
             AstElem::NonZero(ref sub)
-                => wrap_err(Self::cast_nonzero(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_nonzero(get_child(sub, 0)?)),
             AstElem::ZeroNotEqual(ref sub)
-                => wrap_err(Self::cast_zeronotequal(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_zeronotequal(get_child(sub, 0)?)),
             AstElem::AndB(ref l, ref r) => {
                 let ltype = get_child(l, 0)?;
                 let rtype = get_child(r, 1)?;

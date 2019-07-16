@@ -43,9 +43,9 @@ use expression;
 use ToPublicKey;
 use ToPublicKeyHash;
 use self::lex::{lex, TokenIter};
-use self::satisfy::{Satisfiable, Satisfier};
+//use self::satisfy::{Satisfiable, Satisfier};
 use self::types::Property;
-use miniscript::types::Type;
+use miniscript::types::{Type, Correctness};
 use miniscript::types::extra_props::ExtData;
 use std::path::Component::Prefix;
 use ::Error::TypeCheck;
@@ -56,15 +56,13 @@ use ::Error::TypeCheck;
 
 /// Top-level script AST type
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Miniscript<Pk, Pkh=hash160::Hash>
-where Pkh: std::hash::Hash
-{
+pub struct Miniscript<Pk, Pkh=hash160::Hash>{
     ///A node in the Abstract Syntax Tree(
     node: astelem::AstElem<Pk, Pkh>,
     ///The correctness and malleability type information for the AST node
-    ty: types::Type,
+    ty: Option<types::Type>,
     ///Additional information helpful for extra analysis.
-    ext: types::extra_props::ExtData
+    ext: Option<types::extra_props::ExtData>
 }
 
 //
@@ -84,65 +82,71 @@ where Pkh: std::hash::Hash
 impl<Pk, Pkh> fmt::Debug for Miniscript<Pk, Pkh>
 where
     Pk: Clone + fmt::Debug,
-    Pkh: Clone + fmt::Debug + std::hash::Hash,
+    Pkh: Clone + fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.node)
     }
 }
 
-impl<Pk: fmt::Display, Pkh: fmt::Display + std::hash::Hash> fmt::Display for Miniscript<Pk, Pkh> {
+impl<Pk: fmt::Display, Pkh: fmt::Display> fmt::Display for Miniscript<Pk, Pkh> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.node)
     }
 }
 
-//impl<Pk, Pkh> Miniscript<Pk, Pkh> {
-//    /// Extracts the `AstElem` representing the root of the miniscript
-//    pub fn into_inner(self) -> astelem::AstElem<Pk, Pkh> {
-//        self.0
-//    }
-//}
+impl<Pk, Pkh> Miniscript<Pk, Pkh> {
+    /// Extracts the `AstElem` representing the root of the miniscript
+    pub fn into_inner(self) -> astelem::AstElem<Pk, Pkh> {
+        self.node
+    }
 
-//impl Miniscript<bitcoin::PublicKey, hash160::Hash> {
-//    /// Attempt to parse a script into a Miniscript representation
-//    pub fn parse(script: &script::Script)
-//        -> Result<Miniscript<bitcoin::PublicKey, hash160::Hash>, Error>
-//    {
-//        let tokens = lex(script)?;
-//        let mut iter = TokenIter::new(tokens);
-//
-//        let top = decode::parse(&mut iter)?;
+    ///Helper function to set type of a Miniscript node.
+    fn set_type(&mut self, ty: Type, ext: ExtData){
+        self.ty = Some(ty);
+        self.ext = Some(ext);
+    }
+}
+
+impl Miniscript<bitcoin::PublicKey, hash160::Hash> {
+    /// Attempt to parse a script into a Miniscript representation
+    pub fn parse(script: &script::Script)
+        -> Result<Miniscript<bitcoin::PublicKey, hash160::Hash>, Error>
+    {
+        let tokens = lex(script)?;
+        let mut iter = TokenIter::new(tokens);
+
+        let top = decode::parse(&mut iter)?;
 //        let type_check = types::Type::type_check(&top, |_| None)?;
 //        if type_check.corr.base != types::Base::B {
 //            return Err(Error::NonTopLevel(
 //                format!("{:?}", top)
 //            ));
 //        };
-//        if let Some(leading) = iter.next() {
-//            Err(Error::Trailing(leading.to_string()))
-//        } else {
-//            Ok(Miniscript(top))
-//        }
-//    }
-//}
+        if let Some(leading) = iter.next() {
+            Err(Error::Trailing(leading.to_string()))
+        } else {
+            Ok(top)
+        }
+    }
+}
 
-//impl<Pk: ToPublicKey, Pkh: ToPublicKeyHash> Miniscript<Pk, Pkh> {
-//    /// Encode as a Bitcoin script
-//    pub fn encode(&self) -> script::Script {
-//        self.0.encode(script::Builder::new()).into_script()
-//    }
-//
-//    /// Size, in bytes of the script-pubkey. If this Miniscript is used outside
-//    /// of segwit (e.g. in a bare or P2SH descriptor), this quantity should be
-//    /// multiplied by 4 to compute the weight.
-//    ///
-//    /// In general, it is not recommended to use this function directly, but
-//    /// to instead call the corresponding function on a `Descriptor`, which
-//    /// will handle the segwit/non-segwit technicalities for you.
-//    pub fn script_size(&self) -> usize {
-//        self.0.script_size()
-//    }
+impl<Pk: ToPublicKey, Pkh: ToPublicKeyHash> Miniscript<Pk, Pkh> {
+    /// Encode as a Bitcoin script
+    pub fn encode(&self) -> script::Script {
+        self.node.encode(script::Builder::new()).into_script()
+    }
+
+    /// Size, in bytes of the script-pubkey. If this Miniscript is used outside
+    /// of segwit (e.g. in a bare or P2SH descriptor), this quantity should be
+    /// multiplied by 4 to compute the weight.
+    ///
+    /// In general, it is not recommended to use this function directly, but
+    /// to instead call the corresponding function on a `Descriptor`, which
+    /// will handle the segwit/non-segwit technicalities for you.
+    pub fn script_size(&self) -> usize {
+        self.node.script_size()
+    }
 //
 //    /// Maximum number of witness elements used to satisfy the Miniscript
 //    /// fragment, including the witness script itself. Used to estimate
@@ -175,7 +179,8 @@ impl<Pk: fmt::Display, Pkh: fmt::Display + std::hash::Hash> fmt::Display for Min
 //    pub fn max_satisfaction_size(&self, one_cost: usize) -> usize {
 //        self.0.max_satisfaction_size(one_cost)
 //    }
-//}
+}
+
 //
 //impl<Pk, Pkh: Clone> Miniscript<Pk, Pkh> {
 //    pub fn translate_pk<F, Q, E>(&self, translatefn: F)
@@ -211,8 +216,8 @@ impl<Pk: fmt::Display, Pkh: fmt::Display + std::hash::Hash> fmt::Display for Min
 //}
 
 impl<Pk, Pkh> expression::FromTree for Box<Miniscript<Pk, Pkh>> where
-    Pk: str::FromStr,
-    Pkh: str::FromStr + std::hash::Hash,
+    Pk: str::FromStr + std::fmt::Display + fmt::Debug + Clone,
+    Pkh: str::FromStr + std::fmt::Display + fmt::Debug + Clone,
     <Pk as str::FromStr>::Err: ToString,
     <Pkh as str::FromStr>::Err: ToString,
 {
@@ -223,7 +228,7 @@ impl<Pk, Pkh> expression::FromTree for Box<Miniscript<Pk, Pkh>> where
 
 impl<Pk, Pkh> expression::FromTree for Miniscript<Pk, Pkh> where
     Pk: Clone + fmt::Debug + fmt::Display + str::FromStr,
-    Pkh: Clone + fmt::Debug + fmt::Display + str::FromStr + std::hash::Hash,
+    Pkh: Clone + fmt::Debug + fmt::Display + str::FromStr,
     <Pk as str::FromStr>::Err: ToString,
     <Pkh as str::FromStr>::Err: ToString,
 {
@@ -236,8 +241,8 @@ impl<Pk, Pkh> expression::FromTree for Miniscript<Pk, Pkh> where
 //        if type_check.corr.base == types::Base::B {
             Ok(Miniscript{
                 node: inner,
-                ty: Type::from_true(),
-                ext: types::extra_props::ExtData::from_true(),
+                ty: Some(Type::from_true()),
+                ext: Some(types::extra_props::ExtData::from_true()),
             })
 //        } else {
 //            Err(Error::NonTopLevel(format!("{:?}", inner)))
@@ -247,7 +252,7 @@ impl<Pk, Pkh> expression::FromTree for Miniscript<Pk, Pkh> where
 
 impl<Pk, Pkh> str::FromStr for Miniscript<Pk, Pkh> where
     Pk: Clone + fmt::Debug + fmt::Display + str::FromStr,
-    Pkh: Clone + fmt::Debug + fmt::Display + str::FromStr + std::hash::Hash,
+    Pkh: Clone + fmt::Debug + fmt::Display + str::FromStr,
     <Pk as str::FromStr>::Err: ToString,
     <Pkh as str::FromStr>::Err: ToString,
 {
@@ -321,95 +326,95 @@ impl<Pk, Pkh> str::FromStr for Miniscript<Pk, Pkh> where
 //    }
 //}
 //
-//#[cfg(test)]
-//mod tests {
-//    use super::Miniscript;
-//    use DummyKey;
-//    use DummyKeyHash;
-//    use miniscript::astelem::AstElem;
-//    use miniscript::types::{self, Property};
-//    use hex_script;
-//    use policy::Liftable;
-//
-//    use bitcoin::{self, PublicKey};
-//    use bitcoin_hashes::{Hash, hash160, sha256};
-//    use secp256k1;
-//    use std::fmt;
-//    use std::str::FromStr;
-//
-//    type DummyScript = Miniscript<DummyKey, DummyKeyHash>;
-//    type BScript = Miniscript<bitcoin::PublicKey, hash160::Hash>;
-//
-//    fn pubkeys(n: usize) -> Vec<PublicKey> {
-//        let mut ret = Vec::with_capacity(n);
-//        let secp = secp256k1::Secp256k1::new();
-//        let mut sk = [0; 32];
-//        for i in 1..n+1 {
-//            sk[0] = i as u8;
-//            sk[1] = (i >> 8) as u8;
-//            sk[2] = (i >> 16) as u8;
-//
-//            let pk = bitcoin::PublicKey {
-//                key: secp256k1::PublicKey::from_secret_key(
-//                    &secp,
-//                    &secp256k1::SecretKey::from_slice(
-//                        &sk[..],
-//                    ).expect("secret key"),
-//                ),
-//                compressed: true,
-//            };
-//            ret.push(pk);
-//        }
-//        ret
-//    }
-//
-//    fn string_rtt<Pk, Pkh, Str1, Str2>(
-//        script: Miniscript<Pk, Pkh>,
-//        expected_debug: Str1,
-//        expected_display: Str2,
-//    ) where
-//        Pk: Clone + fmt::Debug + fmt::Display + FromStr + Eq,
-//        Pkh: Clone + fmt::Debug + fmt::Display + FromStr + Eq,
-//        <Pk as FromStr>::Err: fmt::Display,
-//        <Pkh as FromStr>::Err: fmt::Display,
-//        Str1: Into<Option<&'static str>>,
-//        Str2: Into<Option<&'static str>>,
-//    {
-//        let type_check = types::Type::type_check(&script.0, |_| None)
-//            .expect("typecheck");
-//        assert!(type_check.corr.base == types::Base::B);
-//        let debug = format!("{:?}", script);
-//        let display = format!("{}", script);
-//        if let Some(expected) = expected_debug.into() {
-//            assert_eq!(debug, expected);
-//        }
-//        if let Some(expected) = expected_display.into() {
-//            assert_eq!(display, expected);
-//        }
-//        let roundtrip = Miniscript::<Pk, Pkh>::from_str(&display)
-//            .expect("parse string serialization");
-//        assert_eq!(roundtrip, script);
-//    }
-//
-//    fn script_rtt<Str1: Into<Option<&'static str>>>(
-//        script: BScript,
-//        expected_hex: Str1,
-//    ) {
-//        let type_check = types::Type::type_check(&script.0, |_| None)
-//            .expect("typecheck");
-//        assert!(type_check.corr.base == types::Base::B);
-//        let bitcoin_script = script.encode();
-//        assert_eq!(bitcoin_script.len(), script.script_size());
-//        if let Some(expected) = expected_hex.into() {
-//            assert_eq!(format!("{:x}", bitcoin_script), expected);
-//        }
-//        let roundtrip = Miniscript::parse(&bitcoin_script)
-//            .expect("parse string serialization");
-//        assert_eq!(roundtrip, script);
-//    }
-//
+#[cfg(test)]
+mod tests {
+    use super::Miniscript;
+    use DummyKey;
+    use DummyKeyHash;
+    use miniscript::astelem::AstElem;
+    use miniscript::types::{self, Property};
+    use hex_script;
+    use policy::Liftable;
+
+    use bitcoin::{self, PublicKey};
+    use bitcoin_hashes::{Hash, hash160, sha256};
+    use secp256k1;
+    use std::fmt;
+    use std::str::FromStr;
+
+    type DummyScript = Miniscript<DummyKey, DummyKeyHash>;
+    type BScript = Miniscript<bitcoin::PublicKey, hash160::Hash>;
+
+    fn pubkeys(n: usize) -> Vec<PublicKey> {
+        let mut ret = Vec::with_capacity(n);
+        let secp = secp256k1::Secp256k1::new();
+        let mut sk = [0; 32];
+        for i in 1..n+1 {
+            sk[0] = i as u8;
+            sk[1] = (i >> 8) as u8;
+            sk[2] = (i >> 16) as u8;
+
+            let pk = bitcoin::PublicKey {
+                key: secp256k1::PublicKey::from_secret_key(
+                    &secp,
+                    &secp256k1::SecretKey::from_slice(
+                        &sk[..],
+                    ).expect("secret key"),
+                ),
+                compressed: true,
+            };
+            ret.push(pk);
+        }
+        ret
+    }
+
+    fn string_rtt<Pk, Pkh, Str1, Str2>(
+        script: Miniscript<Pk, Pkh>,
+        expected_debug: Str1,
+        expected_display: Str2,
+    ) where
+        Pk: Clone + fmt::Debug + fmt::Display + FromStr + Eq,
+        Pkh: Clone + fmt::Debug + fmt::Display + FromStr + Eq,
+        <Pk as FromStr>::Err: fmt::Display,
+        <Pkh as FromStr>::Err: fmt::Display,
+        Str1: Into<Option<&'static str>>,
+        Str2: Into<Option<&'static str>>,
+    {
+        let type_check = types::Type::type_check(&script.node, |_| None)
+            .expect("typecheck");
+        assert!(type_check.corr.base == types::Base::B);
+        let debug = format!("{:?}", script);
+        let display = format!("{}", script);
+        if let Some(expected) = expected_debug.into() {
+            assert_eq!(debug, expected);
+        }
+        if let Some(expected) = expected_display.into() {
+            assert_eq!(display, expected);
+        }
+        let roundtrip = Miniscript::<Pk, Pkh>::from_str(&display)
+            .expect("parse string serialization");
+        assert_eq!(roundtrip, script);
+    }
+
+    fn script_rtt<Str1: Into<Option<&'static str>>>(
+        script: BScript,
+        expected_hex: Str1,
+    ) {
+        let type_check = types::Type::type_check(&script.node, |_| None)
+            .expect("typecheck");
+        assert!(type_check.corr.base == types::Base::B);
+        let bitcoin_script = script.encode();
+        assert_eq!(bitcoin_script.len(), script.script_size());
+        if let Some(expected) = expected_hex.into() {
+            assert_eq!(format!("{:x}", bitcoin_script), expected);
+        }
+        let roundtrip = Miniscript::parse(&bitcoin_script)
+            .expect("parse string serialization");
+        assert_eq!(roundtrip, script);
+    }
+
 //    fn roundtrip(tree: &BScript, s: &str) {
-//        let type_check = match types::Type::type_check(&tree.0, |_| None) {
+//        let type_check = match types::Type::type_check(&tree.node, |_| None) {
 //            Ok(type_check) => type_check,
 //            Err(e) => panic!("typecheck: {}", e),
 //        };
@@ -420,38 +425,38 @@ impl<Pk, Pkh> str::FromStr for Miniscript<Pk, Pkh> where
 //        let deser = Miniscript::parse(&ser).expect("deserialize result of serialize");
 //        assert_eq!(tree, &deser);
 //    }
-//
-//    #[test]
-//    fn basic() {
-//        let pk = bitcoin::PublicKey::from_str("\
-//            020202020202020202020202020202020202020202020202020202020202020202\
-//        ").unwrap();
-//        let hash = hash160::Hash::from_inner([17; 20]);
-//
-//        string_rtt(
-//            DummyScript::from(AstElem::Check(Box::new(AstElem::Pk(DummyKey)))),
-//            "[B/onduesm]c:[K/onduesm]pk(DummyKey)",
-//            "c:pk()",
-//        );
-//
-//        string_rtt(
-//            DummyScript::from(AstElem::Check(
-//                Box::new(AstElem::PkH(DummyKeyHash))
-//            )),
-//            "[B/nduesm]c:[K/nduesm]pk_h(DummyKeyHash)",
-//            "c:pk_h()",
-//        );
-//
-//        script_rtt(
-//            BScript::from(AstElem::Check(Box::new(AstElem::Pk(pk)))),
-//            "21020202020202020202020202020202020202020202020202020202020\
-//             202020202ac",
-//        );
-//        script_rtt(
-//            BScript::from(AstElem::Check(Box::new(AstElem::PkH(hash)))),
-//            "76a914111111111111111111111111111111111111111188ac",
-//        );
-//    }
+
+    #[test]
+    fn basic() {
+        let pk = bitcoin::PublicKey::from_str("\
+            020202020202020202020202020202020202020202020202020202020202020202\
+        ").unwrap();
+        let hash = hash160::Hash::from_inner([17; 20]);
+
+        string_rtt(
+            DummyScript::from(AstElem::Check(Box::new(AstElem::Pk(DummyKey)))),
+            "[B/onduesm]c:[K/onduesm]pk(DummyKey)",
+            "c:pk()",
+        );
+
+        string_rtt(
+            DummyScript::from(AstElem::Check(
+                Box::new(AstElem::PkH(DummyKeyHash))
+            )),
+            "[B/nduesm]c:[K/nduesm]pk_h(DummyKeyHash)",
+            "c:pk_h()",
+        );
+
+        script_rtt(
+            BScript::from(AstElem::Check(Box::new(AstElem::Pk(pk)))),
+            "21020202020202020202020202020202020202020202020202020202020\
+             202020202ac",
+        );
+        script_rtt(
+            BScript::from(AstElem::Check(Box::new(AstElem::PkH(hash)))),
+            "76a914111111111111111111111111111111111111111188ac",
+        );
+    }
 //
 //    #[test]
 //    fn serialize() {
@@ -568,4 +573,4 @@ impl<Pk, Pkh> str::FromStr for Miniscript<Pk, Pkh> where
 //            "2102ffffffffffffffefefefefefefefefefefef394c0fe5b711179e124008584753ac6900"
 //        )).is_err());
 //    }
-//}
+}

@@ -49,39 +49,39 @@
 //! *Output Descriptors*, [which are described here](https://github.com/bitcoin/bitcoin/blob/master/doc/descriptors.md)
 //!
 //! # Examples
-//!
-//! ## Deriving an address from a descriptor
-//!
-//! ```rust
-//! extern crate bitcoin;
-//! extern crate bitcoin_hashes;
-//! extern crate miniscript;
-//!
-//! use std::str::FromStr;
-//!
-//! fn main() {
-//!     let desc = miniscript::Descriptor::<
-//!         bitcoin::PublicKey,
-//!         miniscript::DummyKeyHash,
-//!     >::from_str("\
-//!         sh(wsh(or_d(\
-//!             c:pk(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261),\
-//!             c:pk(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261)\
-//!         )))\
-//!     ").unwrap();
-//!
-//!     // Derive the P2SH address
-//!     assert_eq!(
-//!         desc.address(bitcoin::Network::Bitcoin).unwrap().to_string(),
-//!         "32aAVauGwencZwisuvd3anhhhQhNZQPyHv"
-//!     );
-//!
-//!     // Estimate the satisfaction cost
-//!     assert_eq!(desc.max_satisfaction_weight(), 293);
-//! }
-//! ```
-//!
-
+////!
+////! ## Deriving an address from a descriptor
+////!
+////! ```rust
+////! extern crate bitcoin;
+////! extern crate bitcoin_hashes;
+////! extern crate miniscript;
+////!
+////! use std::str::FromStr;
+////!
+////! fn main() {
+////!     let desc = miniscript::Descriptor::<
+////!         bitcoin::PublicKey,
+////!         miniscript::DummyKeyHash,
+////!     >::from_str("\
+////!         sh(wsh(or_d(\
+////!             c:pk(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261),\
+////!             c:pk(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261)\
+////!         )))\
+////!     ").unwrap();
+////!
+////!     // Derive the P2SH address
+////!     assert_eq!(
+////!         desc.address(bitcoin::Network::Bitcoin).unwrap().to_string(),
+////!         "32aAVauGwencZwisuvd3anhhhQhNZQPyHv"
+////!     );
+////!
+////!     // Estimate the satisfaction cost
+////!     assert_eq!(desc.max_satisfaction_weight(), 293);
+////! }
+////! ```
+////!
+//a
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 #[cfg(all(test, feature = "unstable"))] extern crate test;
 
@@ -102,9 +102,9 @@ use bitcoin::blockdata::{opcodes, script};
 use bitcoin_hashes::{Hash, hash160, sha256};
 
 pub use miniscript::astelem::AstElem;
-pub use descriptor::Descriptor;
+//pub use descriptor::Descriptor;
 pub use miniscript::Miniscript;
-pub use miniscript::satisfy::{BitcoinSig, Satisfier};
+//pub use miniscript::satisfy::{BitcoinSig, Satisfier};
 
 /// Trait describing public key types which can be converted to bitcoin pubkeys
 pub trait ToPublicKey {
@@ -286,7 +286,7 @@ pub enum Error {
 impl<Pk, Pkh> From<miniscript::types::Error<Pk, Pkh>> for Error
 where
     Pk: Clone + fmt::Debug + fmt::Display,
-    Pkh: Clone + fmt::Debug + fmt::Display + std::hash::Hash,
+    Pkh: Clone + fmt::Debug + fmt::Display,
 {
     fn from(e: miniscript::types::Error<Pk, Pkh>) -> Error {
         Error::TypeCheck(e.to_string())
@@ -301,7 +301,7 @@ impl error::Error for Error {
     fn cause(&self) -> Option<&error::Error> {
         match *self {
             Error::BadPubkey(ref e) => Some(e),
-            Error::Psbt(ref e) => Some(e),
+//            Error::Psbt(ref e) => Some(e),
             _ => None,
         }
     }
@@ -369,17 +369,17 @@ impl fmt::Display for Error {
 //    }
 //}
 //
-///// The size of an encoding of a number in Script
-//pub fn script_num_size(n: usize) -> usize {
-//    match n {
-//        n if n <= 0x10 => 1,  // OP_n
-//        n if n < 0x80 => 2,  // OP_PUSH1 <n>
-//        n if n < 0x8000 => 3, // OP_PUSH2 <n>
-//        n if n < 0x800000 => 4, // OP_PUSH3 <n>
-//        n if n < 0x80000000 => 5, // OP_PUSH4 <n>
-//        _ => 6, // OP_PUSH5 <n>
-//    }
-//}
+/// The size of an encoding of a number in Script
+pub fn script_num_size(n: usize) -> usize {
+    match n {
+        n if n <= 0x10 => 1,  // OP_n
+        n if n < 0x80 => 2,  // OP_PUSH1 <n>
+        n if n < 0x8000 => 3, // OP_PUSH2 <n>
+        n if n < 0x800000 => 4, // OP_PUSH3 <n>
+        n if n < 0x80000000 => 5, // OP_PUSH4 <n>
+        _ => 6, // OP_PUSH5 <n>
+    }
+}
 //
 ///// Helper function used by tests
 //#[cfg(test)]

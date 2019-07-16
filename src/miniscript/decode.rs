@@ -88,47 +88,45 @@ macro_rules! match_token {
 //    let right = term.pop().unwrap();
 //    term.push(wrap(Box::new(left), Box::new(right)));
 //}
-trait Decodable <Pk, Pkh, F>{
+trait Decodable <Pk, Pkh>{
     fn push_ast0(&mut self, ms :AstElem<Pk, Pkh>)
-        where Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash;
+        where Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug;
 
-    fn push_ast1(&mut self, wrap: F)
+    fn push_ast1<F>(&mut self, wrap: F)
         where  F: FnOnce(Box<Miniscript<Pk, Pkh>>) -> AstElem<Pk, Pkh>,
-               Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash;
+               Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug;
 
-    fn push_ast2(&mut self, wrap: F)
+    fn push_ast2<F>(&mut self, wrap: F)
         where
             F: FnOnce(Box<Miniscript<Pk, Pkh>>, Box<Miniscript<Pk, Pkh>>) -> AstElem<Pk, Pkh>,
-            Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash;
+            Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug;
 }
-impl<Pk, Pkh, F> Decodable<Pk, Pkh, F> for Vec<Miniscript<Pk, Pkh>>
-where Pkh: std::hash::Hash
-{
+impl<Pk, Pkh> Decodable<Pk, Pkh> for Vec<Miniscript<Pk, Pkh>> {
 
     fn push_ast0(&mut self, ms :AstElem<Pk, Pkh>)
-        where Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash,
+        where Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug,
     {
         let ty = Type::type_check(&ms, return_none).unwrap();
         let ext = ExtData::type_check(&ms, return_none).unwrap();
-        self.push(Miniscript{node: ms, ty: ty, ext: ext});
+        self.push(Miniscript{node: ms, ty: Some(ty), ext: Some(ext)});
     }
 
-    fn push_ast1(&mut self, wrap: F)
+    fn push_ast1<F>(&mut self, wrap: F)
         where  F: FnOnce(Box<Miniscript<Pk, Pkh>>) -> AstElem<Pk, Pkh>,
-        Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash,
+        Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug,
     {
         let top = self.pop().unwrap();
         let wrapped_ms = wrap(Box::new(top));
 
         let ty = Type::type_check(&wrapped_ms, return_none).unwrap();
         let ext = ExtData::type_check(&wrapped_ms, return_none).unwrap();
-        self.push(Miniscript{node: wrapped_ms, ty: ty, ext: ext});
+        self.push(Miniscript{node: wrapped_ms, ty: Some(ty), ext: Some(ext)});
     }
 
-    fn push_ast2(&mut self, wrap: F)
+    fn push_ast2<F>(&mut self, wrap: F)
     where
         F: FnOnce(Box<Miniscript<Pk, Pkh>>, Box<Miniscript<Pk, Pkh>>) -> AstElem<Pk, Pkh>,
-        Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash,
+        Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug,
     {
         let left = self.pop().unwrap();
         let right = self.pop().unwrap();
@@ -136,7 +134,7 @@ where Pkh: std::hash::Hash
         let wrapped_ms = wrap(Box::new(left), Box::new(right));
         let ty = Type::type_check(&wrapped_ms, return_none).unwrap();
         let ext = ExtData::type_check(&wrapped_ms, return_none).unwrap();
-        self.push(Miniscript{node: wrapped_ms, ty: ty, ext: ext});
+        self.push(Miniscript{node: wrapped_ms, ty: Some(ty), ext: Some(ext)});
     }
 }
 
@@ -335,7 +333,7 @@ pub fn parse(
                 let ty = Type::type_check(&wrapped_ms, return_none).unwrap();
                 let ext = ExtData::type_check(&wrapped_ms, return_none).unwrap();
 
-                term.push(Miniscript{node: wrapped_ms, ty: ty, ext: ext});
+                term.push(Miniscript{node: wrapped_ms, ty: Some(ty), ext: Some(ext)});
             },
             Some(NonTerm::ThreshW { n, k }) => {
                 match_token!(

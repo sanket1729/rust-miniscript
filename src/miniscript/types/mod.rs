@@ -22,7 +22,10 @@ use std;
 use miniscript::astelem::AstElem;
 pub use self::correctness::{Correctness, Base, Input};
 pub use self::malleability::{Dissat, Malleability};
+pub use self::extra_props::ExtData;
 use Miniscript;
+use ::Error::TypeCheck;
+
 
 /// None-returning function to help type inference when we need a
 /// closure that simply returns `None`
@@ -83,8 +86,8 @@ pub enum ErrorKind {
     },
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Error<Pk: Clone, Pkh: Clone + std::hash::Hash>
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct Error<Pk: Clone, Pkh: Clone>
 
 {
     /// The fragment that failed typecheck
@@ -96,7 +99,7 @@ pub struct Error<Pk: Clone, Pkh: Clone + std::hash::Hash>
 impl<Pk, Pkh> error::Error for Error<Pk, Pkh>
 where
     Pk: Clone + fmt::Debug + fmt::Display,
-    Pkh: Clone + fmt::Debug + fmt::Display + std::hash::Hash,
+    Pkh: Clone + fmt::Debug + fmt::Display,
 {
     fn cause(&self) -> Option<&error::Error> { None }
 
@@ -108,7 +111,7 @@ where
 impl<Pk, Pkh> fmt::Display for Error<Pk, Pkh>
 where
     Pk: Clone + fmt::Display,
-    Pkh: Clone + fmt::Display + std::hash::Hash,
+    Pkh: Clone + fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.error {
@@ -372,7 +375,7 @@ pub trait Property: Sized {
         where
             C: FnMut(usize) -> Option<Self>,
             Pk: Clone,
-            Pkh: Clone + std::hash::Hash,
+            Pkh: Clone,
     {
         let mut get_child = |sub, n| child(n)
             .map(Ok)
@@ -766,3 +769,185 @@ impl Property for Type {
         })
     }
 }
+
+//
+//fn ty_check1<Pk, Pkh, F, G>(
+//    ms: & Miniscript<Pk, Pkh>,
+//    sub: &mut Miniscript<Pk, Pkh>,
+//    cast_ty: F,
+//    cast_ext: G,
+//) -> Result<(Type, ExtData), ErrorKind>
+//where F: FnOnce(Type) -> Result<Type, ErrorKind>,
+//      G: FnOnce(ExtData) -> Result<ExtData, ErrorKind>,
+//      Pk: Clone, Pkh: Clone
+//{
+//    type_check(sub)?;
+//    let ty = cast_ty(sub.ty.unwrap())?;
+//    let ext = cast_ext(sub.ext.unwrap())?;
+//    Ok((ty, ext))
+//}
+//
+//fn wrap_err<T, Pk, Pkh>(ms: &Miniscript<Pk, Pkh>, result: Result<T, ErrorKind>)
+//    -> Result<T, Error<Pk, Pkh>>
+//    where Pk: Clone, Pkh: Clone,
+//{
+//}
+//fn ty_check2<Pk, Pkh, F, G>(
+//    ms: & Miniscript<Pk, Pkh>,
+//    l: &mut Miniscript<Pk, Pkh>,
+//    r: &mut Miniscript<Pk, Pkh>,
+//    cast_ty: F,
+//    cast_ext: G,
+//) -> Result<(Type, ExtData), ErrorKind>
+//    where F: FnOnce(Type, Type) -> Result<Type, ErrorKind>,
+//          G: FnOnce(ExtData, ExtData) -> Result<ExtData, ErrorKind>,
+//          Pk: Clone, Pkh: Clone
+//{
+//    type_check(l)?;
+//    type_check(r)?;
+//    let ty = cast_ty(l.ty.unwrap(), r.ty.unwrap())?;
+//    let ext = cast_ext(l.ext.unwrap(), r.ext.unwrap())?;
+//    Ok((ty, ext))
+//}
+//
+///// Calculate the type of Naked Miniscript by filling in the type information
+///// at each astElem.
+//fn type_check<Pk, Pkh>(
+//    ms: &mut Miniscript<Pk, Pkh>,
+//) -> Result<(), Error<Pk, Pkh>>
+//where Pk: Clone, Pkh: Clone
+//{
+//    let ret = match ms.node {
+//        AstElem::True =>
+//            Ok((Type::from_true(), ExtData::from_true())),
+//        AstElem::False => Ok((Type::from_false(), ExtData::from_false())),
+//        AstElem::Pk(..) => Ok((Type::from_pk(), ExtData::from_pk())),
+//        AstElem::PkH(..) => Ok((Type::from_pk_h(), ExtData::from_pk_h())),
+//        AstElem::ThreshM(k, ref pks) => {
+//            if k == 0 {
+//                return Err(Error {
+//                    fragment: ms.node.clone(),
+//                    error: ErrorKind::ZeroThreshold,
+//                });
+//            }
+//            if k > pks.len() {
+//                return Err(Error {
+//                    fragment: ms.node.clone(),
+//                    error: ErrorKind::OverThreshold(k, pks.len()),
+//                });
+//            }
+//            Ok((Type::from_multi(k, pks.len()), ExtData::from_multi(k, pks.len())))
+//        },
+//        AstElem::After(t) => {
+//            if t == 0 {
+//                return Err(Error {
+//                    fragment: ms.node.clone(),
+//                    error: ErrorKind::ZeroTime,
+//                });
+//            }
+//            Ok((Type::from_after(t), ExtData::from_after(t)))
+//        },
+//        AstElem::Older(t) => {
+//            // FIXME check if t > 2^31 - 1
+//            if t == 0 {
+//                return Err(Error {
+//                    fragment: ms.node.clone(),
+//                    error: ErrorKind::ZeroTime,
+//                });
+//            }
+//            Ok((Type::from_older(t), ExtData::from_older(t)))
+//        },
+//        AstElem::Sha256(..) =>
+//            Ok((Type::from_sha256(), ExtData::from_sha256())),
+//        AstElem::Hash256(..) =>
+//            Ok((Type::from_hash256(), ExtData::from_hash256())),
+//        AstElem::Ripemd160(..) =>
+//            Ok((Type::from_ripemd160(), ExtData::from_ripemd160())),
+//        AstElem::Hash160(..) =>
+//            Ok((Type::from_hash160(), ExtData::from_hash160())),
+//        AstElem::Alt(ref mut sub) =>
+//            ty_check1(ms, sub, Type::cast_alt, ExtData::cast_alt),
+//        AstElem::Swap(ref mut sub) =>
+//            ty_check1(ms, sub, Type::cast_swap, ExtData::cast_swap),
+//        AstElem::Check(ref mut sub) =>
+//            ty_check1(ms, sub, Type::cast_check, ExtData::cast_check),
+//        AstElem::DupIf(ref mut sub) =>
+//            ty_check1(ms, sub, Type::cast_dupif, ExtData::cast_dupif),
+//        AstElem::Verify(ref mut sub) =>
+//            ty_check1(ms, sub, Type::cast_verify, ExtData::cast_verify),
+//        AstElem::NonZero(ref mut sub) =>
+//            ty_check1(ms, sub, Type::cast_nonzero, ExtData::cast_nonzero),
+//        AstElem::ZeroNotEqual(ref mut sub) =>
+//            ty_check1(ms, sub, Type::cast_zeronotequal, ExtData::cast_zeronotequal),
+//        AstElem::AndB(ref mut l, ref mut r) =>
+//            ty_check2(ms, l, r, Type::and_b, ExtData::and_b),
+//        AstElem::AndV(ref mut l, ref mut r) =>
+//            ty_check2(ms, l, r, Type::and_v, ExtData::and_v),
+//        AstElem::OrB(ref mut l, ref mut r) =>
+//            ty_check2(ms, l, r, Type::or_b, ExtData::or_b),
+//        AstElem::OrD(ref mut l, ref mut r) =>
+//            ty_check2(ms, l, r, Type::or_d, ExtData::or_d),
+//        AstElem::OrC(ref mut l, ref mut r) =>
+//            ty_check2(ms, l, r, Type::or_c, ExtData::or_c),
+//        AstElem::OrI(ref mut l, ref mut r) =>
+//            ty_check2(ms, l, r, Type::or_i, ExtData::or_i),
+//        AstElem::AndOr(ref mut a, ref mut  b, ref c) =>
+//            unimplemented!(),
+//        AstElem::Thresh(k, ref mut subs) => {
+//            if k == 0 {
+//                return Err(Error {
+//                    fragment: ms.node.clone(),
+//                    error: ErrorKind::ZeroThreshold,
+//                });
+//            }
+//            if k > subs.len() {
+//                return Err(Error {
+//                    fragment: ms.node.clone(),
+//                    error: ErrorKind::OverThreshold(k, subs.len()),
+//                });
+//            }
+//
+//            let mut last_err_frag = None;
+//            let ty = Type::threshold(
+//                k,
+//                subs.len(),
+//                |n| match type_check(&mut subs[n]) {
+//                    Ok(x) => Ok(subs[n].ty.unwrap()),
+//                    Err(e) => {
+//                        last_err_frag = Some(e.fragment);
+//                        Err(e.error)
+//                    },
+//                },
+//            );
+//
+//            let ty = ty.map_err(|kind| Error {
+//                fragment: last_err_frag.unwrap_or(ms.node.clone()),
+//                error: kind,
+//            })?;
+//
+//            let ext = ExtData::threshold(
+//                k,
+//                subs.len(),
+//                |n| match type_check(&mut subs[n]) {
+//                    Ok(x) => Ok(subs[n].ext.unwrap()),
+//                    Err(e) => {
+//                        last_err_frag = Some(e.fragment);
+//                        Err(e.error)
+//                    },
+//                },
+//            );
+//
+//            let ext = ext.map_err(|kind| Error {
+//                fragment: last_err_frag.unwrap_or(ms.node.clone()),
+//                error: kind,
+//            })?;
+//            Ok((ty, ext))
+//        },
+//    };
+//    ret.map_err(|kind| Error {
+//        fragment: ms.node.clone(),
+//        error: kind,
+//    });
+//    let (ty, ext) = ret?;
+//    Ok(ms.set_type(ty, ext))
+//}

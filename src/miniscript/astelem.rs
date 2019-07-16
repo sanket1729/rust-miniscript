@@ -36,10 +36,8 @@ use miniscript::types::{self, Property, Type, Correctness, extra_props};
 use Miniscript;
 
 /// All AST elements
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum AstElem<Pk, Pkh>
-where Pkh: std::hash::Hash
-{
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AstElem<Pk, Pkh=hash160::Hash> {
     /// `1`
     True,
     /// `0`
@@ -101,9 +99,7 @@ where Pkh: std::hash::Hash
     ThreshM(usize, Vec<Pk>),
 }
 
-impl<Pk, Pkh> AstElem<Pk, Pkh>
-where Pkh: std::hash::Hash
-{
+impl<Pk, Pkh> AstElem<Pk, Pkh> {
     /// Internal helper function for displaying wrapper types; returns
     /// a character to display before the `:` as well as a reference
     /// to the wrapped type to allow easy recursion
@@ -294,7 +290,7 @@ where Pkh: std::hash::Hash
 impl<Pk, Pkh> fmt::Debug for AstElem<Pk, Pkh>
 where
     Pk: Clone + fmt::Debug,
-    Pkh: Clone + fmt::Debug + std::hash::Hash,
+    Pkh: Clone + fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str("[")?;
@@ -386,10 +382,7 @@ where
     }
 }
 
-impl<Pk , Pkh> fmt::Display for AstElem<Pk, Pkh>
-where Pkh: std::hash::Hash + fmt::Display,
-    Pk: fmt::Display,
-{
+impl<Pk: fmt::Display, Pkh: fmt::Display> fmt::Display for AstElem<Pk, Pkh> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             AstElem::Pk(ref pk) => write!(f, "pk({})", pk),
@@ -442,7 +435,7 @@ where Pkh: std::hash::Hash + fmt::Display,
 
 impl<Pk, Pkh> expression::FromTree for Box<AstElem<Pk, Pkh>> where
     Pk: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone,
-    Pkh: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone + std::hash::Hash,
+    Pkh: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone,
     <Pk as str::FromStr>::Err: ToString,
     <Pkh as str::FromStr>::Err: ToString,
 {
@@ -451,20 +444,18 @@ impl<Pk, Pkh> expression::FromTree for Box<AstElem<Pk, Pkh>> where
     }
 }
 
-fn temp<Pk, Pkh>(t: AstElem<Pk, Pkh>)
-    -> Miniscript<Pk, Pkh>
-    where Pkh: std::hash::Hash,
+fn temp<Pk, Pkh>(t: AstElem<Pk, Pkh>) -> Miniscript<Pk, Pkh>
 {
     Miniscript{
         node: t,
-        ty: Type::from_true(),
-        ext: extra_props::ExtData::from_true(),
+        ty: Some(Type::from_true()),
+        ext: Some(extra_props::ExtData::from_true()),
     }
 }
 
 impl<Pk, Pkh> expression::FromTree for AstElem<Pk, Pkh> where
     Pk: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone,
-    Pkh: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone + std::hash::Hash,
+    Pkh: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone,
     <Pk as str::FromStr>::Err: ToString,
     <Pkh as str::FromStr>::Err: ToString,
 {
@@ -590,240 +581,240 @@ impl<Pk, Pkh> expression::FromTree for AstElem<Pk, Pkh> where
         Ok(unwrapped)
     }
 }
-//
-///// Helper trait to add a `push_astelem` method to `script::Builder`
-//trait PushAstElem<Pk, Pkh> {
-//    fn push_astelem(self, ast: &AstElem<Pk, Pkh>) -> Self;
-//}
-//
-//trait BadTrait {
-//    fn push_verify(self) -> Self;
-//}
-//
-//impl<Pk, Pkh> PushAstElem<Pk, Pkh> for script::Builder where
-//    Pk: ToPublicKey,
-//    Pkh: ToPublicKeyHash
-//{
-//    fn push_astelem(self, ast: &AstElem<Pk, Pkh>) -> Self {
-//        ast.encode(self)
-//    }
-//}
-//
-//impl BadTrait for script::Builder {
-//    fn push_verify(self) -> Self {
-//        // FIXME
-//        use std::mem;
-//        unsafe {
-//            let mut v: Vec<u8> = mem::transmute(self);
-//            match v.pop() {
-//                None => v.push(0x69),
-//                Some(0x87) => v.push(0x88),
-//                Some(0x9c) => v.push(0x9d),
-//                Some(0xac) => v.push(0xad),
-//                Some(0xae) => v.push(0xaf),
-//                Some(x) => {
-//                    v.push(x);
-//                    v.push(0x69);
-//                }
-//            }
-//            mem::transmute(v)
-//        }
-//    }
-//}
-//
-//impl<Pk: ToPublicKey, Pkh: ToPublicKeyHash> AstElem<Pk, Pkh> {
-//    /// Encode the element as a fragment of Bitcoin Script. The inverse
-//    /// function, from Script to an AST element, is implemented in the
-//    /// `parse` module.
-//    pub fn encode(&self, mut builder: script::Builder) -> script::Builder {
-//        match *self {
-//            AstElem::Pk(ref pk) => builder.push_key(&pk.to_public_key()),
-//            AstElem::PkH(ref hash) => builder
-//                .push_opcode(opcodes::all::OP_DUP)
-//                .push_opcode(opcodes::all::OP_HASH160)
-//                .push_slice(&hash.to_public_key_hash()[..])
-//                .push_opcode(opcodes::all::OP_EQUALVERIFY),
-//            AstElem::After(t) => builder
-//                .push_int(t as i64)
-//                .push_opcode(opcodes::OP_CSV),
-//            AstElem::Older(t) => builder
-//                .push_int(t as i64)
-//                .push_opcode(opcodes::OP_CLTV),
-//            AstElem::Sha256(h) => builder
-//                .push_opcode(opcodes::all::OP_SIZE)
-//                .push_int(32)
-//                .push_opcode(opcodes::all::OP_EQUALVERIFY)
-//                .push_opcode(opcodes::all::OP_SHA256)
-//                .push_slice(&h[..])
-//                .push_opcode(opcodes::all::OP_EQUAL),
-//            AstElem::Hash256(h) => builder
-//                .push_opcode(opcodes::all::OP_SIZE)
-//                .push_int(32)
-//                .push_opcode(opcodes::all::OP_EQUALVERIFY)
-//                .push_opcode(opcodes::all::OP_HASH256)
-//                .push_slice(&h[..])
-//                .push_opcode(opcodes::all::OP_EQUAL),
-//            AstElem::Ripemd160(h) => builder
-//                .push_opcode(opcodes::all::OP_SIZE)
-//                .push_int(32)
-//                .push_opcode(opcodes::all::OP_EQUALVERIFY)
-//                .push_opcode(opcodes::all::OP_RIPEMD160)
-//                .push_slice(&h[..])
-//                .push_opcode(opcodes::all::OP_EQUAL),
-//            AstElem::Hash160(h) => builder
-//                .push_opcode(opcodes::all::OP_SIZE)
-//                .push_int(32)
-//                .push_opcode(opcodes::all::OP_EQUALVERIFY)
-//                .push_opcode(opcodes::all::OP_HASH160)
-//                .push_slice(&h[..])
-//                .push_opcode(opcodes::all::OP_EQUAL),
-//            AstElem::True => builder.push_opcode(opcodes::OP_TRUE),
-//            AstElem::False => builder.push_opcode(opcodes::OP_FALSE),
-//            AstElem::Alt(ref sub) => builder
-//                .push_opcode(opcodes::all::OP_TOALTSTACK)
-//                .push_astelem(sub)
-//                .push_opcode(opcodes::all::OP_FROMALTSTACK),
-//            AstElem::Swap(ref sub) => builder
-//                .push_opcode(opcodes::all::OP_SWAP)
-//                .push_astelem(sub),
-//            AstElem::Check(ref sub) => builder
-//                .push_astelem(sub)
-//                .push_opcode(opcodes::all::OP_CHECKSIG),
-//            AstElem::DupIf(ref sub) => builder
-//                .push_opcode(opcodes::all::OP_DUP)
-//                .push_opcode(opcodes::all::OP_IF)
-//                .push_astelem(sub)
-//                .push_opcode(opcodes::all::OP_ENDIF),
-//            AstElem::Verify(ref sub) => builder
-//                .push_astelem(sub)
-//                .push_verify(),
-//            AstElem::NonZero(ref sub) => builder
-//                .push_opcode(opcodes::all::OP_SIZE)
-//                .push_opcode(opcodes::all::OP_0NOTEQUAL)
-//                .push_opcode(opcodes::all::OP_IF)
-//                .push_astelem(sub)
-//                .push_opcode(opcodes::all::OP_ENDIF),
-//            AstElem::ZeroNotEqual(ref sub) => builder
-//                .push_astelem(sub)
-//                .push_opcode(opcodes::all::OP_0NOTEQUAL),
-//            AstElem::AndV(ref left, ref right) => builder
-//                .push_astelem(left)
-//                .push_astelem(right),
-//            AstElem::AndB(ref left, ref right) => builder
-//                .push_astelem(left)
-//                .push_astelem(right)
-//                .push_opcode(opcodes::all::OP_BOOLAND),
-//            AstElem::AndOr(ref a, ref b, ref c) => builder
-//                .push_astelem(a)
-//                .push_opcode(opcodes::all::OP_NOTIF)
-//                .push_astelem(b)
-//                .push_opcode(opcodes::all::OP_ELSE)
-//                .push_astelem(c)
-//                .push_opcode(opcodes::all::OP_ENDIF),
-//            AstElem::OrB(ref left, ref right) => builder
-//                .push_astelem(left)
-//                .push_astelem(right)
-//                .push_opcode(opcodes::all::OP_BOOLOR),
-//            AstElem::OrD(ref left, ref right) => builder
-//                .push_astelem(left)
-//                .push_opcode(opcodes::all::OP_IFDUP)
-//                .push_opcode(opcodes::all::OP_NOTIF)
-//                .push_astelem(right)
-//                .push_opcode(opcodes::all::OP_ENDIF),
-//            AstElem::OrC(ref left, ref right) => builder
-//                .push_astelem(left)
-//                .push_opcode(opcodes::all::OP_NOTIF)
-//                .push_astelem(right)
-//                .push_opcode(opcodes::all::OP_ENDIF),
-//            AstElem::OrI(ref left, ref right) => builder
-//                .push_opcode(opcodes::all::OP_IF)
-//                .push_astelem(left)
-//                .push_opcode(opcodes::all::OP_ELSE)
-//                .push_astelem(right)
-//                .push_opcode(opcodes::all::OP_ENDIF),
-//            AstElem::Thresh(k, ref subs) => {
-//                builder = builder.push_astelem(&subs[0]);
-//                for sub in &subs[1..] {
-//                    builder = builder
-//                        .push_astelem(sub)
-//                        .push_opcode(opcodes::all::OP_ADD);
-//                }
-//                builder
-//                    .push_int(k as i64)
-//                    .push_opcode(opcodes::all::OP_EQUAL)
-//            },
-//            AstElem::ThreshM(k, ref keys) => {
-//                builder = builder.push_int(k as i64);
-//                for pk in keys {
-//                    builder = builder.push_key(&pk.to_public_key());
-//                }
-//                builder
-//                    .push_int(keys.len() as i64)
-//                    .push_opcode(opcodes::all::OP_CHECKMULTISIG)
-//            },
-//        }
-//    }
-//
-//    /// Size, in bytes of the script-pubkey. If this Miniscript is used outside
-//    /// of segwit (e.g. in a bare or P2SH descriptor), this quantity should be
-//    /// multiplied by 4 to compute the weight.
-//    ///
-//    /// In general, it is not recommended to use this function directly, but
-//    /// to instead call the corresponding function on a `Descriptor`, which
-//    /// will handle the segwit/non-segwit technicalities for you.
-//    pub fn script_size(&self) -> usize {
-//        match *self {
-//            AstElem::Pk(ref pk) => pk.serialized_len(),
-//            AstElem::PkH(..) => 24,
-//            AstElem::After(n) => script_num_size(n as usize) + 1,
-//            AstElem::Older(n) => script_num_size(n as usize) + 1,
-//            AstElem::Sha256(..) => 33 + 6,
-//            AstElem::Hash256(..) => 33 + 6,
-//            AstElem::Ripemd160(..) => 21 + 6,
-//            AstElem::Hash160(..) => 21 + 6,
-//            AstElem::True => 1,
-//            AstElem::False => 1,
-//            AstElem::Alt(ref sub) => sub.script_size() + 2,
-//            AstElem::Swap(ref sub) => sub.script_size() + 1,
-//            AstElem::Check(ref sub) => sub.script_size() + 1,
-//            AstElem::DupIf(ref sub) => sub.script_size() + 3,
-//            AstElem::Verify(ref sub) => sub.script_size() +
-//                match **sub {
-//                    AstElem::Sha256(..) |
-//                    AstElem::Hash256(..) |
-//                    AstElem::Ripemd160(..) |
-//                    AstElem::Hash160(..) |
-//                    AstElem::Check(..) |
-//                    AstElem::ThreshM(..) => 0,
-//                    _ => 1,
-//                },
-//            AstElem::NonZero(ref sub) => sub.script_size() + 4,
-//            AstElem::ZeroNotEqual(ref sub) => sub.script_size() + 1,
-//            AstElem::AndV(ref l, ref r) => l.script_size() + r.script_size(),
-//            AstElem::AndB(ref l, ref r) => l.script_size() + r.script_size() + 1,
-//            AstElem::AndOr(ref a, ref b, ref c) => a.script_size()
-//                + b.script_size()
-//                + c.script_size()
-//                + 3,
-//            AstElem::OrB(ref l, ref r) => l.script_size() + r.script_size() + 1,
-//            AstElem::OrD(ref l, ref r) => l.script_size() + r.script_size() + 3,
-//            AstElem::OrC(ref l, ref r) => l.script_size() + r.script_size() + 2,
-//            AstElem::OrI(ref l, ref r) => l.script_size() + r.script_size() + 3,
-//            AstElem::Thresh(k, ref subs) => {
-//                assert!(!subs.is_empty(), "threshold must be nonempty");
-//                script_num_size(k) // k
-//                    + 1 // EQUAL
-//                    + subs.iter().map(|s| s.script_size()).sum::<usize>()
-//                    + subs.len() // ADD
-//                    - 1 // no ADD on first element
-//            }
-//            AstElem::ThreshM(k, ref pks) => script_num_size(k)
-//                + 1
-//                + script_num_size(pks.len())
-//                + pks.iter().map(ToPublicKey::serialized_len).sum::<usize>(),
-//        }
-//    }
-//
+
+/// Helper trait to add a `push_astelem` method to `script::Builder`
+trait PushAstElem<Pk, Pkh> {
+    fn push_astelem(self, ast: &Miniscript<Pk, Pkh>) -> Self;
+}
+
+trait BadTrait {
+    fn push_verify(self) -> Self;
+}
+
+impl<Pk, Pkh> PushAstElem<Pk, Pkh> for script::Builder where
+    Pk: ToPublicKey,
+    Pkh: ToPublicKeyHash
+{
+    fn push_astelem(self, ast: &Miniscript<Pk, Pkh>) -> Self {
+        ast.node.encode(self)
+    }
+}
+
+impl BadTrait for script::Builder {
+    fn push_verify(self) -> Self {
+        // FIXME
+        use std::mem;
+        unsafe {
+            let mut v: Vec<u8> = mem::transmute(self);
+            match v.pop() {
+                None => v.push(0x69),
+                Some(0x87) => v.push(0x88),
+                Some(0x9c) => v.push(0x9d),
+                Some(0xac) => v.push(0xad),
+                Some(0xae) => v.push(0xaf),
+                Some(x) => {
+                    v.push(x);
+                    v.push(0x69);
+                }
+            }
+            mem::transmute(v)
+        }
+    }
+}
+
+impl<Pk: ToPublicKey, Pkh: ToPublicKeyHash> AstElem<Pk, Pkh> {
+    /// Encode the element as a fragment of Bitcoin Script. The inverse
+    /// function, from Script to an AST element, is implemented in the
+    /// `parse` module.
+    pub fn encode(&self, mut builder: script::Builder) -> script::Builder {
+        match *self {
+            AstElem::Pk(ref pk) => builder.push_key(&pk.to_public_key()),
+            AstElem::PkH(ref hash) => builder
+                .push_opcode(opcodes::all::OP_DUP)
+                .push_opcode(opcodes::all::OP_HASH160)
+                .push_slice(&hash.to_public_key_hash()[..])
+                .push_opcode(opcodes::all::OP_EQUALVERIFY),
+            AstElem::After(t) => builder
+                .push_int(t as i64)
+                .push_opcode(opcodes::OP_CSV),
+            AstElem::Older(t) => builder
+                .push_int(t as i64)
+                .push_opcode(opcodes::OP_CLTV),
+            AstElem::Sha256(h) => builder
+                .push_opcode(opcodes::all::OP_SIZE)
+                .push_int(32)
+                .push_opcode(opcodes::all::OP_EQUALVERIFY)
+                .push_opcode(opcodes::all::OP_SHA256)
+                .push_slice(&h[..])
+                .push_opcode(opcodes::all::OP_EQUAL),
+            AstElem::Hash256(h) => builder
+                .push_opcode(opcodes::all::OP_SIZE)
+                .push_int(32)
+                .push_opcode(opcodes::all::OP_EQUALVERIFY)
+                .push_opcode(opcodes::all::OP_HASH256)
+                .push_slice(&h[..])
+                .push_opcode(opcodes::all::OP_EQUAL),
+            AstElem::Ripemd160(h) => builder
+                .push_opcode(opcodes::all::OP_SIZE)
+                .push_int(32)
+                .push_opcode(opcodes::all::OP_EQUALVERIFY)
+                .push_opcode(opcodes::all::OP_RIPEMD160)
+                .push_slice(&h[..])
+                .push_opcode(opcodes::all::OP_EQUAL),
+            AstElem::Hash160(h) => builder
+                .push_opcode(opcodes::all::OP_SIZE)
+                .push_int(32)
+                .push_opcode(opcodes::all::OP_EQUALVERIFY)
+                .push_opcode(opcodes::all::OP_HASH160)
+                .push_slice(&h[..])
+                .push_opcode(opcodes::all::OP_EQUAL),
+            AstElem::True => builder.push_opcode(opcodes::OP_TRUE),
+            AstElem::False => builder.push_opcode(opcodes::OP_FALSE),
+            AstElem::Alt(ref sub) => builder
+                .push_opcode(opcodes::all::OP_TOALTSTACK)
+                .push_astelem(sub)
+                .push_opcode(opcodes::all::OP_FROMALTSTACK),
+            AstElem::Swap(ref sub) => builder
+                .push_opcode(opcodes::all::OP_SWAP)
+                .push_astelem(sub),
+            AstElem::Check(ref sub) => builder
+                .push_astelem(sub)
+                .push_opcode(opcodes::all::OP_CHECKSIG),
+            AstElem::DupIf(ref sub) => builder
+                .push_opcode(opcodes::all::OP_DUP)
+                .push_opcode(opcodes::all::OP_IF)
+                .push_astelem(sub)
+                .push_opcode(opcodes::all::OP_ENDIF),
+            AstElem::Verify(ref sub) => builder
+                .push_astelem(sub)
+                .push_verify(),
+            AstElem::NonZero(ref sub) => builder
+                .push_opcode(opcodes::all::OP_SIZE)
+                .push_opcode(opcodes::all::OP_0NOTEQUAL)
+                .push_opcode(opcodes::all::OP_IF)
+                .push_astelem(sub)
+                .push_opcode(opcodes::all::OP_ENDIF),
+            AstElem::ZeroNotEqual(ref sub) => builder
+                .push_astelem(sub)
+                .push_opcode(opcodes::all::OP_0NOTEQUAL),
+            AstElem::AndV(ref left, ref right) => builder
+                .push_astelem(left)
+                .push_astelem(right),
+            AstElem::AndB(ref left, ref right) => builder
+                .push_astelem(left)
+                .push_astelem(right)
+                .push_opcode(opcodes::all::OP_BOOLAND),
+            AstElem::AndOr(ref a, ref b, ref c) => builder
+                .push_astelem(a)
+                .push_opcode(opcodes::all::OP_NOTIF)
+                .push_astelem(b)
+                .push_opcode(opcodes::all::OP_ELSE)
+                .push_astelem(c)
+                .push_opcode(opcodes::all::OP_ENDIF),
+            AstElem::OrB(ref left, ref right) => builder
+                .push_astelem(left)
+                .push_astelem(right)
+                .push_opcode(opcodes::all::OP_BOOLOR),
+            AstElem::OrD(ref left, ref right) => builder
+                .push_astelem(left)
+                .push_opcode(opcodes::all::OP_IFDUP)
+                .push_opcode(opcodes::all::OP_NOTIF)
+                .push_astelem(right)
+                .push_opcode(opcodes::all::OP_ENDIF),
+            AstElem::OrC(ref left, ref right) => builder
+                .push_astelem(left)
+                .push_opcode(opcodes::all::OP_NOTIF)
+                .push_astelem(right)
+                .push_opcode(opcodes::all::OP_ENDIF),
+            AstElem::OrI(ref left, ref right) => builder
+                .push_opcode(opcodes::all::OP_IF)
+                .push_astelem(left)
+                .push_opcode(opcodes::all::OP_ELSE)
+                .push_astelem(right)
+                .push_opcode(opcodes::all::OP_ENDIF),
+            AstElem::Thresh(k, ref subs) => {
+                builder = builder.push_astelem(&subs[0]);
+                for sub in &subs[1..] {
+                    builder = builder
+                        .push_astelem(sub)
+                        .push_opcode(opcodes::all::OP_ADD);
+                }
+                builder
+                    .push_int(k as i64)
+                    .push_opcode(opcodes::all::OP_EQUAL)
+            },
+            AstElem::ThreshM(k, ref keys) => {
+                builder = builder.push_int(k as i64);
+                for pk in keys {
+                    builder = builder.push_key(&pk.to_public_key());
+                }
+                builder
+                    .push_int(keys.len() as i64)
+                    .push_opcode(opcodes::all::OP_CHECKMULTISIG)
+            },
+        }
+    }
+
+    /// Size, in bytes of the script-pubkey. If this Miniscript is used outside
+    /// of segwit (e.g. in a bare or P2SH descriptor), this quantity should be
+    /// multiplied by 4 to compute the weight.
+    ///
+    /// In general, it is not recommended to use this function directly, but
+    /// to instead call the corresponding function on a `Descriptor`, which
+    /// will handle the segwit/non-segwit technicalities for you.
+    pub fn script_size(&self) -> usize {
+        match *self {
+            AstElem::Pk(ref pk) => pk.serialized_len(),
+            AstElem::PkH(..) => 24,
+            AstElem::After(n) => script_num_size(n as usize) + 1,
+            AstElem::Older(n) => script_num_size(n as usize) + 1,
+            AstElem::Sha256(..) => 33 + 6,
+            AstElem::Hash256(..) => 33 + 6,
+            AstElem::Ripemd160(..) => 21 + 6,
+            AstElem::Hash160(..) => 21 + 6,
+            AstElem::True => 1,
+            AstElem::False => 1,
+            AstElem::Alt(ref sub) => sub.node.script_size() + 2,
+            AstElem::Swap(ref sub) => sub.node.script_size() + 1,
+            AstElem::Check(ref sub) => sub.node.script_size() + 1,
+            AstElem::DupIf(ref sub) => sub.node.script_size() + 3,
+            AstElem::Verify(ref sub) => sub.node.script_size() +
+                match sub.node {
+                    AstElem::Sha256(..) |
+                    AstElem::Hash256(..) |
+                    AstElem::Ripemd160(..) |
+                    AstElem::Hash160(..) |
+                    AstElem::Check(..) |
+                    AstElem::ThreshM(..) => 0,
+                    _ => 1,
+                },
+            AstElem::NonZero(ref sub) => sub.node.script_size() + 4,
+            AstElem::ZeroNotEqual(ref sub) => sub.node.script_size() + 1,
+            AstElem::AndV(ref l, ref r) => l.node.script_size() + r.node.script_size(),
+            AstElem::AndB(ref l, ref r) => l.node.script_size() + r.node.script_size() + 1,
+            AstElem::AndOr(ref a, ref b, ref c) => a.node.script_size()
+                + b.node.script_size()
+                + c.node.script_size()
+                + 3,
+            AstElem::OrB(ref l, ref r) => l.node.script_size() + r.node.script_size() + 1,
+            AstElem::OrD(ref l, ref r) => l.node.script_size() + r.node.script_size() + 3,
+            AstElem::OrC(ref l, ref r) => l.node.script_size() + r.node.script_size() + 2,
+            AstElem::OrI(ref l, ref r) => l.node.script_size() + r.node.script_size() + 3,
+            AstElem::Thresh(k, ref subs) => {
+                assert!(!subs.is_empty(), "threshold must be nonempty");
+                script_num_size(k) // k
+                    + 1 // EQUAL
+                    + subs.iter().map(|s| s.node.script_size()).sum::<usize>()
+                    + subs.len() // ADD
+                    - 1 // no ADD on first element
+            }
+            AstElem::ThreshM(k, ref pks) => script_num_size(k)
+                + 1
+                + script_num_size(pks.len())
+                + pks.iter().map(ToPublicKey::serialized_len).sum::<usize>(),
+        }
+    }
+
 //    /// Maximum number of witness elements used to dissatisfy the Miniscript
 //    /// fragment. Used to estimate the weight of the `VarInt` that specifies
 //    /// this number in a serialized transaction.
@@ -1093,5 +1084,5 @@ impl<Pk, Pkh> expression::FromTree for AstElem<Pk, Pkh> where
 //            AstElem::ThreshM(k, _) => 1 + 73 * k,
 //        }
 //    }
-//}
+}
 

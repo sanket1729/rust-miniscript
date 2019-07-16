@@ -17,10 +17,12 @@ pub mod malleability;
 pub mod extra_props;
 
 use std::{error, fmt};
+use std;
 
 use miniscript::astelem::AstElem;
 pub use self::correctness::{Correctness, Base, Input};
 pub use self::malleability::{Dissat, Malleability};
+use Miniscript;
 
 /// None-returning function to help type inference when we need a
 /// closure that simply returns `None`
@@ -82,7 +84,9 @@ pub enum ErrorKind {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Error<Pk: Clone, Pkh: Clone> {
+pub struct Error<Pk: Clone, Pkh: Clone + std::hash::Hash>
+
+{
     /// The fragment that failed typecheck
     pub fragment: AstElem<Pk, Pkh>,
     /// The reason that typechecking failed
@@ -92,7 +96,7 @@ pub struct Error<Pk: Clone, Pkh: Clone> {
 impl<Pk, Pkh> error::Error for Error<Pk, Pkh>
 where
     Pk: Clone + fmt::Debug + fmt::Display,
-    Pkh: Clone + fmt::Debug + fmt::Display,
+    Pkh: Clone + fmt::Debug + fmt::Display + std::hash::Hash,
 {
     fn cause(&self) -> Option<&error::Error> { None }
 
@@ -104,7 +108,7 @@ where
 impl<Pk, Pkh> fmt::Display for Error<Pk, Pkh>
 where
     Pk: Clone + fmt::Display,
-    Pkh: Clone + fmt::Display,
+    Pkh: Clone + fmt::Display + std::hash::Hash,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.error {
@@ -368,7 +372,7 @@ pub trait Property: Sized {
         where
             C: FnMut(usize) -> Option<Self>,
             Pk: Clone,
-            Pkh: Clone,
+            Pkh: Clone + std::hash::Hash,
     {
         let mut get_child = |sub, n| child(n)
             .map(Ok)
@@ -423,53 +427,53 @@ pub trait Property: Sized {
             AstElem::Ripemd160(..) => Ok(Self::from_ripemd160()),
             AstElem::Hash160(..) => Ok(Self::from_hash160()),
             AstElem::Alt(ref sub)
-            => wrap_err(Self::cast_alt(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_alt(get_child(&sub.node, 0)?)),
             AstElem::Swap(ref sub)
-            => wrap_err(Self::cast_swap(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_swap(get_child(&sub.node, 0)?)),
             AstElem::Check(ref sub)
-            => wrap_err(Self::cast_check(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_check(get_child(&sub.node, 0)?)),
             AstElem::DupIf(ref sub)
-            => wrap_err(Self::cast_dupif(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_dupif(get_child(&sub.node, 0)?)),
             AstElem::Verify(ref sub)
-            => wrap_err(Self::cast_verify(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_verify(get_child(&sub.node, 0)?)),
             AstElem::NonZero(ref sub)
-            => wrap_err(Self::cast_nonzero(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_nonzero(get_child(&sub.node, 0)?)),
             AstElem::ZeroNotEqual(ref sub)
-            => wrap_err(Self::cast_zeronotequal(get_child(sub, 0)?)),
+            => wrap_err(Self::cast_zeronotequal(get_child(&sub.node, 0)?)),
             AstElem::AndB(ref l, ref r) => {
-                let ltype = get_child(l, 0)?;
-                let rtype = get_child(r, 1)?;
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
                 wrap_err(Self::and_b(ltype, rtype))
             },
             AstElem::AndV(ref l, ref r) => {
-                let ltype = get_child(l, 0)?;
-                let rtype = get_child(r, 1)?;
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
                 wrap_err(Self::and_v(ltype, rtype))
             },
             AstElem::OrB(ref l, ref r) => {
-                let ltype = get_child(l, 0)?;
-                let rtype = get_child(r, 1)?;
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
                 wrap_err(Self::or_b(ltype, rtype))
             },
             AstElem::OrD(ref l, ref r) => {
-                let ltype = get_child(l, 0)?;
-                let rtype = get_child(r, 1)?;
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
                 wrap_err(Self::or_d(ltype, rtype))
             },
             AstElem::OrC(ref l, ref r) => {
-                let ltype = get_child(l, 0)?;
-                let rtype = get_child(r, 1)?;
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
                 wrap_err(Self::or_c(ltype, rtype))
             },
             AstElem::OrI(ref l, ref r) => {
-                let ltype = get_child(l, 0)?;
-                let rtype = get_child(r, 1)?;
+                let ltype = get_child(&l.node, 0)?;
+                let rtype = get_child(&r.node, 1)?;
                 wrap_err(Self::or_i(ltype, rtype))
             },
             AstElem::AndOr(ref a, ref b, ref c) => {
-                let atype = get_child(a, 0)?;
-                let btype = get_child(b, 1)?;
-                let ctype = get_child(c, 1)?;
+                let atype = get_child(&a.node, 0)?;
+                let btype = get_child(&b.node, 1)?;
+                let ctype = get_child(&c.node, 1)?;
                 wrap_err(Self::and_or(atype, btype, ctype))
             },
             AstElem::Thresh(k, ref subs) => {
@@ -490,7 +494,7 @@ pub trait Property: Sized {
                 let res = Self::threshold(
                     k,
                     subs.len(),
-                    |n| match get_child(&subs[n], n) {
+                    |n| match get_child(&subs[n].node, n) {
                         Ok(x) => Ok(x),
                         Err(e) => {
                             last_err_frag = Some(e.fragment);

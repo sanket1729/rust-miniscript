@@ -148,6 +148,7 @@ impl ToPublicKeyHash for bitcoin::PublicKey {
     }
 }
 
+
 /// Dummy key which de/serializes to the empty string; useful sometimes for testing
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
 pub struct DummyKey;
@@ -214,8 +215,8 @@ pub enum Error {
     NonMinimalVerify(miniscript::lex::Token),
     /// Push was illegal in some context
     InvalidPush(Vec<u8>),
-    /// PSBT-related error
-    Psbt(psbt::Error),
+//    /// PSBT-related error
+//    Psbt(psbt::Error),
     /// rust-bitcoin script error
     Script(script::Error),
     /// A `CHECKMULTISIG` opcode was preceded by a number > 20
@@ -285,7 +286,7 @@ pub enum Error {
 impl<Pk, Pkh> From<miniscript::types::Error<Pk, Pkh>> for Error
 where
     Pk: Clone + fmt::Debug + fmt::Display,
-    Pkh: Clone + fmt::Debug + fmt::Display,
+    Pkh: Clone + fmt::Debug + fmt::Display + std::hash::Hash,
 {
     fn from(e: miniscript::types::Error<Pk, Pkh>) -> Error {
         Error::TypeCheck(e.to_string())
@@ -317,7 +318,7 @@ impl fmt::Display for Error {
             Error::NonMinimalVerify(tok) => write!(f, "{} VERIFY", tok),
             Error::InvalidPush(ref push) =>
                 write!(f, "invalid push {:?}", push), // TODO hexify this
-            Error::Psbt(ref e) => fmt::Display::fmt(e, f),
+//            Error::Psbt(ref e) => fmt::Display::fmt(e, f),
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n)
                 => write!(f, "checkmultisig with {} keys", n),
@@ -361,35 +362,28 @@ impl fmt::Display for Error {
     }
 }
 
-#[doc(hidden)]
-impl From<psbt::Error> for Error {
-    fn from(e: psbt::Error) -> Error {
-        Error::Psbt(e)
-    }
-}
-
-#[doc(hidden)]
-impl From<descriptor::satisfied_contraints::Error> for Error {
-    fn from(e: descriptor::satisfied_contraints::Error) -> Error {
-        Error::InterpreterError(e)
-    }
-}
-
-/// The size of an encoding of a number in Script
-pub fn script_num_size(n: usize) -> usize {
-    match n {
-        n if n <= 0x10 => 1,  // OP_n
-        n if n < 0x80 => 2,  // OP_PUSH1 <n>
-        n if n < 0x8000 => 3, // OP_PUSH2 <n>
-        n if n < 0x800000 => 4, // OP_PUSH3 <n>
-        n if n < 0x80000000 => 5, // OP_PUSH4 <n>
-        _ => 6, // OP_PUSH5 <n>
-    }
-}
-
-/// Helper function used by tests
-#[cfg(test)]
-fn hex_script(s: &str) -> bitcoin::Script {
-    let v: Vec<u8> = bitcoin_hashes::hex::FromHex::from_hex(s).unwrap();
-    bitcoin::Script::from(v)
-}
+//#[doc(hidden)]
+//impl From<psbt::Error> for Error {
+//    fn from(e: psbt::Error) -> Error {
+//        Error::Psbt(e)
+//    }
+//}
+//
+///// The size of an encoding of a number in Script
+//pub fn script_num_size(n: usize) -> usize {
+//    match n {
+//        n if n <= 0x10 => 1,  // OP_n
+//        n if n < 0x80 => 2,  // OP_PUSH1 <n>
+//        n if n < 0x8000 => 3, // OP_PUSH2 <n>
+//        n if n < 0x800000 => 4, // OP_PUSH3 <n>
+//        n if n < 0x80000000 => 5, // OP_PUSH4 <n>
+//        _ => 6, // OP_PUSH5 <n>
+//    }
+//}
+//
+///// Helper function used by tests
+//#[cfg(test)]
+//fn hex_script(s: &str) -> bitcoin::Script {
+//    let v: Vec<u8> = bitcoin_hashes::hex::FromHex::from_hex(s).unwrap();
+//    bitcoin::Script::from(v)
+//}

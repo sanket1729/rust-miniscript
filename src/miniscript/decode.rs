@@ -17,12 +17,18 @@
 //! Functionality to parse a Bitcoin Script into a `Miniscript`
 //!
 
-use bitcoin;
+use ::{bitcoin, Miniscript};
 use bitcoin_hashes::{Hash, hash160, ripemd160, sha256, sha256d};
 
 use miniscript::astelem::AstElem;
 use miniscript::lex::{Token as Tk, TokenIter};
 use miniscript::Error;
+use miniscript::types::Type;
+use miniscript::types::extra_props::ExtData;
+use miniscript::types::Property;
+use std;
+
+fn return_none<T>(_: usize) -> Option<T> { None }
 
 #[derive(Copy, Clone, Debug)]
 enum NonTerm {
@@ -66,28 +72,79 @@ macro_rules! match_token {
     };
 }
 
-fn rewrap1<Pk, Pkh, F>(term: &mut Vec<AstElem<Pk, Pkh>>, wrap: F)
-where
-    F: FnOnce(Box<AstElem<Pk, Pkh>>) -> AstElem<Pk, Pkh>
-{
-    let top = term.pop().unwrap();
-    term.push(wrap(Box::new(top)));
-}
+//fn rewrap1<Pk, Pkh, F>(term: &mut Vec<AstElem<Pk, Pkh>>, wrap: F)
+//where
+//    F: FnOnce(Box<AstElem<Pk, Pkh>>) -> AstElem<Pk, Pkh>
+//{
+//    let top = term.pop().unwrap();
+//    term.push(wrap(Box::new(top)));
+//}
+//
+//fn rewrap2<Pk, Pkh, F>(term: &mut Vec<AstElem<Pk, Pkh>>, wrap: F)
+//where
+//    F: FnOnce(Box<AstElem<Pk, Pkh>>, Box<AstElem<Pk, Pkh>>) -> AstElem<Pk, Pkh>
+//{
+//    let left = term.pop().unwrap();
+//    let right = term.pop().unwrap();
+//    term.push(wrap(Box::new(left), Box::new(right)));
+//}
+trait Decodable <Pk, Pkh, F>{
+    fn push_ast0(&mut self, ms :AstElem<Pk, Pkh>)
+        where Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash;
 
-fn rewrap2<Pk, Pkh, F>(term: &mut Vec<AstElem<Pk, Pkh>>, wrap: F)
-where
-    F: FnOnce(Box<AstElem<Pk, Pkh>>, Box<AstElem<Pk, Pkh>>) -> AstElem<Pk, Pkh>
+    fn push_ast1(&mut self, wrap: F)
+        where  F: FnOnce(Box<Miniscript<Pk, Pkh>>) -> AstElem<Pk, Pkh>,
+               Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash;
+
+    fn push_ast2(&mut self, wrap: F)
+        where
+            F: FnOnce(Box<Miniscript<Pk, Pkh>>, Box<Miniscript<Pk, Pkh>>) -> AstElem<Pk, Pkh>,
+            Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash;
+}
+impl<Pk, Pkh, F> Decodable<Pk, Pkh, F> for Vec<Miniscript<Pk, Pkh>>
+where Pkh: std::hash::Hash
 {
-    let left = term.pop().unwrap();
-    let right = term.pop().unwrap();
-    term.push(wrap(Box::new(left), Box::new(right)));
+
+    fn push_ast0(&mut self, ms :AstElem<Pk, Pkh>)
+        where Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash,
+    {
+        let ty = Type::type_check(&ms, return_none).unwrap();
+        let ext = ExtData::type_check(&ms, return_none).unwrap();
+        self.push(Miniscript{node: ms, ty: ty, ext: ext});
+    }
+
+    fn push_ast1(&mut self, wrap: F)
+        where  F: FnOnce(Box<Miniscript<Pk, Pkh>>) -> AstElem<Pk, Pkh>,
+        Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash,
+    {
+        let top = self.pop().unwrap();
+        let wrapped_ms = wrap(Box::new(top));
+
+        let ty = Type::type_check(&wrapped_ms, return_none).unwrap();
+        let ext = ExtData::type_check(&wrapped_ms, return_none).unwrap();
+        self.push(Miniscript{node: wrapped_ms, ty: ty, ext: ext});
+    }
+
+    fn push_ast2(&mut self, wrap: F)
+    where
+        F: FnOnce(Box<Miniscript<Pk, Pkh>>, Box<Miniscript<Pk, Pkh>>) -> AstElem<Pk, Pkh>,
+        Pk: Clone + std::fmt::Debug, Pkh:Clone + std::fmt::Debug + std::hash::Hash,
+    {
+        let left = self.pop().unwrap();
+        let right = self.pop().unwrap();
+
+        let wrapped_ms = wrap(Box::new(left), Box::new(right));
+        let ty = Type::type_check(&wrapped_ms, return_none).unwrap();
+        let ext = ExtData::type_check(&wrapped_ms, return_none).unwrap();
+        self.push(Miniscript{node: wrapped_ms, ty: ty, ext: ext});
+    }
 }
 
 /// Parse a script fragment into an `AstElem`
 #[allow(unreachable_patterns)]
 pub fn parse(
     tokens: &mut TokenIter,
-) -> Result<AstElem<bitcoin::PublicKey, hash160::Hash>, Error> {
+) -> Result<Miniscript<bitcoin::PublicKey, hash160::Hash>, Error> {
     let mut non_term = Vec::with_capacity(tokens.len());
     let mut term = Vec::with_capacity(tokens.len());
 
@@ -100,7 +157,7 @@ pub fn parse(
                 match_token!(
                     tokens,
                     // pubkey
-                    Tk::Pubkey(pk) => term.push(AstElem::Pk(pk)),
+                    Tk::Pubkey(pk) => term.push_ast0(AstElem::Pk(pk)),
                     // checksig
                     Tk::CheckSig => {
                         non_term.push(NonTerm::Check);
@@ -110,7 +167,7 @@ pub fn parse(
                     Tk::Verify => match_token!(
                         tokens,
                         Tk::Equal, Tk::Hash20(hash), Tk::Hash160, Tk::Dup
-                            => term.push(AstElem::PkH(
+                            => term.push_ast0(AstElem::PkH(
                                 hash160::Hash::from_inner(hash)
                             )),
                         x => {
@@ -125,9 +182,9 @@ pub fn parse(
                     },
                     // timelocks
                     Tk::CheckSequenceVerify, Tk::Num(n)
-                        => term.push(AstElem::After(n)),
+                        => term.push_ast0(AstElem::After(n)),
                     Tk::CheckLockTimeVerify, Tk::Num(n)
-                        => term.push(AstElem::Older(n)),
+                        => term.push_ast0(AstElem::Older(n)),
                     // hashlocks
                     Tk::Equal => match_token!(
                         tokens,
@@ -137,14 +194,14 @@ pub fn parse(
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
-                            Tk::Size => term.push(AstElem::Sha256(
+                            Tk::Size => term.push_ast0(AstElem::Sha256(
                                 sha256::Hash::from_inner(hash)
                             )),
                             Tk::Hash256,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
-                            Tk::Size => term.push(AstElem::Hash256(
+                            Tk::Size => term.push_ast0(AstElem::Hash256(
                                 sha256d::Hash::from_inner(hash)
                             )),
                         ),
@@ -154,14 +211,14 @@ pub fn parse(
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
-                            Tk::Size => term.push(AstElem::Ripemd160(
+                            Tk::Size => term.push_ast0(AstElem::Ripemd160(
                                 ripemd160::Hash::from_inner(hash)
                             )),
                             Tk::Hash160,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
-                            Tk::Size => term.push(AstElem::Hash160(
+                            Tk::Size => term.push_ast0(AstElem::Hash160(
                                 hash160::Hash::from_inner(hash)
                             )),
                         ),
@@ -184,8 +241,8 @@ pub fn parse(
                         non_term.push(NonTerm::Expression);
                     },
                     // most other fragments
-                    Tk::Num(0) => term.push(AstElem::False),
-                    Tk::Num(1) => term.push(AstElem::True),
+                    Tk::Num(0) => term.push_ast0(AstElem::False),
+                    Tk::Num(1) => term.push_ast0(AstElem::True),
                     Tk::EndIf => {
                         non_term.push(NonTerm::EndIf);
                         non_term.push(NonTerm::MaybeAndV);
@@ -222,7 +279,7 @@ pub fn parse(
                             Tk::Num(k) => k,
                         );
                         keys.reverse();
-                        term.push(AstElem::ThreshM(k as usize, keys));
+                        term.push_ast0(AstElem::ThreshM(k as usize, keys));
                     },
                 );
             },
@@ -245,7 +302,8 @@ pub fn parse(
                 if let Some(&Tk::Swap) = tokens.peek() {
                     tokens.next();
                     let top = term.pop().unwrap();
-                    term.push(AstElem::Swap(Box::new(top)));
+                    term.push_ast1(AstElem::Swap);
+//                    term.push(AstElem::Swap(Box::new(top)));
                     non_term.push(NonTerm::MaybeSwap);
                 }
             },
@@ -254,26 +312,30 @@ pub fn parse(
                     tokens,
                     Tk::ToAltStack => {},
                 );
-                rewrap1(&mut term, AstElem::Alt);
+                term.push_ast1(AstElem::Alt);
+//                rewrap1(&mut term, AstElem::Alt);
             },
-            Some(NonTerm::Check) => rewrap1(&mut term, AstElem::Check),
-            Some(NonTerm::DupIf) => rewrap1(&mut term, AstElem::DupIf),
-            Some(NonTerm::Verify) => rewrap1(&mut term, AstElem::Verify),
-            Some(NonTerm::NonZero) => rewrap1(&mut term, AstElem::NonZero),
+            Some(NonTerm::Check) => term.push_ast1(AstElem::Check),
+            Some(NonTerm::DupIf) => term.push_ast1(AstElem::DupIf),
+            Some(NonTerm::Verify) => term.push_ast1(AstElem::Verify),
+            Some(NonTerm::NonZero) => term.push_ast1(AstElem::NonZero),
             Some(NonTerm::ZeroNotEqual)
-                => rewrap1(&mut term, AstElem::ZeroNotEqual),
-            Some(NonTerm::AndV) => rewrap2(&mut term, AstElem::AndV),
-            Some(NonTerm::AndB) => rewrap2(&mut term, AstElem::AndB),
-            Some(NonTerm::OrB) => rewrap2(&mut term, AstElem::OrB),
-            Some(NonTerm::OrC) => rewrap2(&mut term, AstElem::OrC),
-            Some(NonTerm::OrD) => rewrap2(&mut term, AstElem::OrD),
+                => term.push_ast1(AstElem::ZeroNotEqual),
+            Some(NonTerm::AndV) => term.push_ast2(AstElem::AndV),
+            Some(NonTerm::AndB) => term.push_ast2(AstElem::AndB),
+            Some(NonTerm::OrB) => term.push_ast2(AstElem::OrB),
+            Some(NonTerm::OrC) => term.push_ast2(AstElem::OrC),
+            Some(NonTerm::OrD) => term.push_ast2(AstElem::OrD),
             Some(NonTerm::Tern) => {
                 let a = term.pop().unwrap();
                 let b = term.pop().unwrap();
                 let c = term.pop().unwrap();
-                term.push(
-                    AstElem::AndOr(Box::new(a), Box::new(b), Box::new(c))
-                );
+                let wrapped_ms = AstElem::AndOr(Box::new(a), Box::new(b), Box::new(c));
+
+                let ty = Type::type_check(&wrapped_ms, return_none).unwrap();
+                let ext = ExtData::type_check(&wrapped_ms, return_none).unwrap();
+
+                term.push(Miniscript{node: wrapped_ms, ty: ty, ext: ext});
             },
             Some(NonTerm::ThreshW { n, k }) => {
                 match_token!(
@@ -294,7 +356,7 @@ pub fn parse(
                 for _ in 0..n {
                     subs.push(term.pop().unwrap());
                 }
-                term.push(AstElem::Thresh(k, subs));
+                term.push_ast0(AstElem::Thresh(k, subs));
             },
             Some(NonTerm::EndIf) => {
                 match_token!(
@@ -331,12 +393,7 @@ pub fn parse(
                 match_token!(
                     tokens,
                     Tk::If => {
-                        let left = term.pop().unwrap();
-                        let right = term.pop().unwrap();
-                        term.push(AstElem::OrI(
-                            Box::new(left),
-                            Box::new(right),
-                        ));
+                        term.push_ast2(AstElem::OrI);
                     },
                     Tk::NotIf => {
                         non_term.push(NonTerm::Tern);

@@ -768,186 +768,147 @@ impl Property for Type {
             mall: Property::threshold(k, n, |n| Ok(sub_ck(n)?.mall))?,
         })
     }
-}
 
-//
-//fn ty_check1<Pk, Pkh, F, G>(
-//    ms: & Miniscript<Pk, Pkh>,
-//    sub: &mut Miniscript<Pk, Pkh>,
-//    cast_ty: F,
-//    cast_ext: G,
-//) -> Result<(Type, ExtData), ErrorKind>
-//where F: FnOnce(Type) -> Result<Type, ErrorKind>,
-//      G: FnOnce(ExtData) -> Result<ExtData, ErrorKind>,
-//      Pk: Clone, Pkh: Clone
-//{
-//    type_check(sub)?;
-//    let ty = cast_ty(sub.ty.unwrap())?;
-//    let ext = cast_ext(sub.ext.unwrap())?;
-//    Ok((ty, ext))
-//}
-//
-//fn wrap_err<T, Pk, Pkh>(ms: &Miniscript<Pk, Pkh>, result: Result<T, ErrorKind>)
-//    -> Result<T, Error<Pk, Pkh>>
-//    where Pk: Clone, Pkh: Clone,
-//{
-//}
-//fn ty_check2<Pk, Pkh, F, G>(
-//    ms: & Miniscript<Pk, Pkh>,
-//    l: &mut Miniscript<Pk, Pkh>,
-//    r: &mut Miniscript<Pk, Pkh>,
-//    cast_ty: F,
-//    cast_ext: G,
-//) -> Result<(Type, ExtData), ErrorKind>
-//    where F: FnOnce(Type, Type) -> Result<Type, ErrorKind>,
-//          G: FnOnce(ExtData, ExtData) -> Result<ExtData, ErrorKind>,
-//          Pk: Clone, Pkh: Clone
-//{
-//    type_check(l)?;
-//    type_check(r)?;
-//    let ty = cast_ty(l.ty.unwrap(), r.ty.unwrap())?;
-//    let ext = cast_ext(l.ext.unwrap(), r.ext.unwrap())?;
-//    Ok((ty, ext))
-//}
-//
-///// Calculate the type of Naked Miniscript by filling in the type information
-///// at each astElem.
-//fn type_check<Pk, Pkh>(
-//    ms: &mut Miniscript<Pk, Pkh>,
-//) -> Result<(), Error<Pk, Pkh>>
-//where Pk: Clone, Pkh: Clone
-//{
-//    let ret = match ms.node {
-//        AstElem::True =>
-//            Ok((Type::from_true(), ExtData::from_true())),
-//        AstElem::False => Ok((Type::from_false(), ExtData::from_false())),
-//        AstElem::Pk(..) => Ok((Type::from_pk(), ExtData::from_pk())),
-//        AstElem::PkH(..) => Ok((Type::from_pk_h(), ExtData::from_pk_h())),
-//        AstElem::ThreshM(k, ref pks) => {
-//            if k == 0 {
-//                return Err(Error {
-//                    fragment: ms.node.clone(),
-//                    error: ErrorKind::ZeroThreshold,
-//                });
-//            }
-//            if k > pks.len() {
-//                return Err(Error {
-//                    fragment: ms.node.clone(),
-//                    error: ErrorKind::OverThreshold(k, pks.len()),
-//                });
-//            }
-//            Ok((Type::from_multi(k, pks.len()), ExtData::from_multi(k, pks.len())))
-//        },
-//        AstElem::After(t) => {
-//            if t == 0 {
-//                return Err(Error {
-//                    fragment: ms.node.clone(),
-//                    error: ErrorKind::ZeroTime,
-//                });
-//            }
-//            Ok((Type::from_after(t), ExtData::from_after(t)))
-//        },
-//        AstElem::Older(t) => {
-//            // FIXME check if t > 2^31 - 1
-//            if t == 0 {
-//                return Err(Error {
-//                    fragment: ms.node.clone(),
-//                    error: ErrorKind::ZeroTime,
-//                });
-//            }
-//            Ok((Type::from_older(t), ExtData::from_older(t)))
-//        },
-//        AstElem::Sha256(..) =>
-//            Ok((Type::from_sha256(), ExtData::from_sha256())),
-//        AstElem::Hash256(..) =>
-//            Ok((Type::from_hash256(), ExtData::from_hash256())),
-//        AstElem::Ripemd160(..) =>
-//            Ok((Type::from_ripemd160(), ExtData::from_ripemd160())),
-//        AstElem::Hash160(..) =>
-//            Ok((Type::from_hash160(), ExtData::from_hash160())),
-//        AstElem::Alt(ref mut sub) =>
-//            ty_check1(ms, sub, Type::cast_alt, ExtData::cast_alt),
-//        AstElem::Swap(ref mut sub) =>
-//            ty_check1(ms, sub, Type::cast_swap, ExtData::cast_swap),
-//        AstElem::Check(ref mut sub) =>
-//            ty_check1(ms, sub, Type::cast_check, ExtData::cast_check),
-//        AstElem::DupIf(ref mut sub) =>
-//            ty_check1(ms, sub, Type::cast_dupif, ExtData::cast_dupif),
-//        AstElem::Verify(ref mut sub) =>
-//            ty_check1(ms, sub, Type::cast_verify, ExtData::cast_verify),
-//        AstElem::NonZero(ref mut sub) =>
-//            ty_check1(ms, sub, Type::cast_nonzero, ExtData::cast_nonzero),
-//        AstElem::ZeroNotEqual(ref mut sub) =>
-//            ty_check1(ms, sub, Type::cast_zeronotequal, ExtData::cast_zeronotequal),
-//        AstElem::AndB(ref mut l, ref mut r) =>
-//            ty_check2(ms, l, r, Type::and_b, ExtData::and_b),
-//        AstElem::AndV(ref mut l, ref mut r) =>
-//            ty_check2(ms, l, r, Type::and_v, ExtData::and_v),
-//        AstElem::OrB(ref mut l, ref mut r) =>
-//            ty_check2(ms, l, r, Type::or_b, ExtData::or_b),
-//        AstElem::OrD(ref mut l, ref mut r) =>
-//            ty_check2(ms, l, r, Type::or_d, ExtData::or_d),
-//        AstElem::OrC(ref mut l, ref mut r) =>
-//            ty_check2(ms, l, r, Type::or_c, ExtData::or_c),
-//        AstElem::OrI(ref mut l, ref mut r) =>
-//            ty_check2(ms, l, r, Type::or_i, ExtData::or_i),
-//        AstElem::AndOr(ref mut a, ref mut  b, ref c) =>
-//            unimplemented!(),
-//        AstElem::Thresh(k, ref mut subs) => {
-//            if k == 0 {
-//                return Err(Error {
-//                    fragment: ms.node.clone(),
-//                    error: ErrorKind::ZeroThreshold,
-//                });
-//            }
-//            if k > subs.len() {
-//                return Err(Error {
-//                    fragment: ms.node.clone(),
-//                    error: ErrorKind::OverThreshold(k, subs.len()),
-//                });
-//            }
-//
-//            let mut last_err_frag = None;
-//            let ty = Type::threshold(
-//                k,
-//                subs.len(),
-//                |n| match type_check(&mut subs[n]) {
-//                    Ok(x) => Ok(subs[n].ty.unwrap()),
-//                    Err(e) => {
-//                        last_err_frag = Some(e.fragment);
-//                        Err(e.error)
-//                    },
-//                },
-//            );
-//
-//            let ty = ty.map_err(|kind| Error {
-//                fragment: last_err_frag.unwrap_or(ms.node.clone()),
-//                error: kind,
-//            })?;
-//
-//            let ext = ExtData::threshold(
-//                k,
-//                subs.len(),
-//                |n| match type_check(&mut subs[n]) {
-//                    Ok(x) => Ok(subs[n].ext.unwrap()),
-//                    Err(e) => {
-//                        last_err_frag = Some(e.fragment);
-//                        Err(e.error)
-//                    },
-//                },
-//            );
-//
-//            let ext = ext.map_err(|kind| Error {
-//                fragment: last_err_frag.unwrap_or(ms.node.clone()),
-//                error: kind,
-//            })?;
-//            Ok((ty, ext))
-//        },
-//    };
-//    ret.map_err(|kind| Error {
-//        fragment: ms.node.clone(),
-//        error: kind,
-//    });
-//    let (ty, ext) = ret?;
-//    Ok(ms.set_type(ty, ext))
-//}
+    /// Compute the type of a fragment assuming all the children of
+    /// Miniscript have been computed already.
+    fn type_check<Pk, Pkh, C>(
+        fragment: &AstElem<Pk, Pkh>,
+        mut child: C,
+    ) -> Result<Self, Error<Pk, Pkh>>
+        where
+            C: FnMut(usize) -> Option<Self>,
+            Pk: Clone,
+            Pkh: Clone,
+    {
+        let wrap_err = |result: Result<Self, ErrorKind>| result
+            .map_err(|kind| Error {
+                fragment: fragment.clone(),
+                error: kind,
+            });
+
+        let ret = match *fragment {
+            AstElem::True => Ok(Self::from_true()),
+            AstElem::False => Ok(Self::from_false()),
+            AstElem::Pk(..) => Ok(Self::from_pk()),
+            AstElem::PkH(..) => Ok(Self::from_pk_h()),
+            AstElem::ThreshM(k, ref pks) => {
+                if k == 0 {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::ZeroThreshold,
+                    });
+                }
+                if k > pks.len() {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::OverThreshold(k, pks.len()),
+                    });
+                }
+                Ok(Self::from_multi(k, pks.len()))
+            },
+            AstElem::After(t) => {
+                if t == 0 {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::ZeroTime,
+                    });
+                }
+                Ok(Self::from_after(t))
+            },
+            AstElem::Older(t) => {
+                // FIXME check if t > 2^31 - 1
+                if t == 0 {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::ZeroTime,
+                    });
+                }
+                Ok(Self::from_older(t))
+            },
+            AstElem::Sha256(..) => Ok(Self::from_sha256()),
+            AstElem::Hash256(..) => Ok(Self::from_hash256()),
+            AstElem::Ripemd160(..) => Ok(Self::from_ripemd160()),
+            AstElem::Hash160(..) => Ok(Self::from_hash160()),
+            AstElem::Alt(ref sub) =>
+                wrap_err(Self::cast_alt(sub.ty.clone())),
+            AstElem::Swap(ref sub) =>
+                wrap_err(Self::cast_swap(sub.ty.clone())),
+            AstElem::Check(ref sub) =>
+                wrap_err(Self::cast_check(sub.ty.clone())),
+            AstElem::DupIf(ref sub) =>
+                wrap_err(Self::cast_dupif(sub.ty.clone())),
+            AstElem::Verify(ref sub) =>
+                wrap_err(Self::cast_verify(sub.ty.clone())),
+            AstElem::NonZero(ref sub) =>
+                wrap_err(Self::cast_nonzero(sub.ty.clone())),
+            AstElem::ZeroNotEqual(ref sub) =>
+                wrap_err(Self::cast_zeronotequal(sub.ty.clone())),
+            AstElem::AndB(ref l, ref r) => {
+                let ltype = l.ty.clone();
+                let rtype = r.ty.clone();
+                wrap_err(Self::and_b(ltype, rtype))
+            },
+            AstElem::AndV(ref l, ref r) => {
+                let ltype = l.ty.clone();
+                let rtype = r.ty.clone();
+                wrap_err(Self::and_v(ltype, rtype))
+            },
+            AstElem::OrB(ref l, ref r) => {
+                let ltype = l.ty.clone();
+                let rtype = r.ty.clone();
+                wrap_err(Self::or_b(ltype, rtype))
+            },
+            AstElem::OrD(ref l, ref r) => {
+                let ltype = l.ty.clone();
+                let rtype = r.ty.clone();
+                wrap_err(Self::or_d(ltype, rtype))
+            },
+            AstElem::OrC(ref l, ref r) => {
+                let ltype = l.ty.clone();
+                let rtype = r.ty.clone();
+                wrap_err(Self::or_c(ltype, rtype))
+            },
+            AstElem::OrI(ref l, ref r) => {
+                let ltype = l.ty.clone();
+                let rtype = r.ty.clone();
+                wrap_err(Self::or_i(ltype, rtype))
+            },
+            AstElem::AndOr(ref a, ref b, ref c) => {
+                let atype = a.ty.clone();
+                let btype = b.ty.clone();
+                let ctype = c.ty.clone();
+                wrap_err(Self::and_or(atype, btype, ctype))
+            },
+            AstElem::Thresh(k, ref subs) => {
+                if k == 0 {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::ZeroThreshold,
+                    });
+                }
+                if k > subs.len() {
+                    return Err(Error {
+                        fragment: fragment.clone(),
+                        error: ErrorKind::OverThreshold(k, subs.len()),
+                    });
+                }
+
+                let mut last_err_frag = None;
+                let res = Self::threshold(
+                    k,
+                    subs.len(),
+                    |n| Ok(subs[n].ty.clone())
+                );
+
+                res.map_err(|kind| Error {
+                    fragment: last_err_frag.unwrap_or(fragment.clone()),
+                    error: kind,
+                })
+            },
+        };
+        if let Ok(ref ret) = ret {
+            ret.sanity_checks()
+        }
+        ret
+    }
+}

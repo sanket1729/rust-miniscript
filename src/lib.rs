@@ -380,10 +380,10 @@ pub fn script_num_size(n: usize) -> usize {
         _ => 6, // OP_PUSH5 <n>
     }
 }
-//
-///// Helper function used by tests
-//#[cfg(test)]
-//fn hex_script(s: &str) -> bitcoin::Script {
-//    let v: Vec<u8> = bitcoin_hashes::hex::FromHex::from_hex(s).unwrap();
-//    bitcoin::Script::from(v)
-//}
+
+/// Helper function used by tests
+#[cfg(test)]
+fn hex_script(s: &str) -> bitcoin::Script {
+    let v: Vec<u8> = bitcoin_hashes::hex::FromHex::from_hex(s).unwrap();
+    bitcoin::Script::from(v)
+}

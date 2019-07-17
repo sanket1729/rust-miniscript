@@ -49,39 +49,39 @@
 //! *Output Descriptors*, [which are described here](https://github.com/bitcoin/bitcoin/blob/master/doc/descriptors.md)
 //!
 //! # Examples
-////!
-////! ## Deriving an address from a descriptor
-////!
-////! ```rust
-////! extern crate bitcoin;
-////! extern crate bitcoin_hashes;
-////! extern crate miniscript;
-////!
-////! use std::str::FromStr;
-////!
-////! fn main() {
-////!     let desc = miniscript::Descriptor::<
-////!         bitcoin::PublicKey,
-////!         miniscript::DummyKeyHash,
-////!     >::from_str("\
-////!         sh(wsh(or_d(\
-////!             c:pk(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261),\
-////!             c:pk(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261)\
-////!         )))\
-////!     ").unwrap();
-////!
-////!     // Derive the P2SH address
-////!     assert_eq!(
-////!         desc.address(bitcoin::Network::Bitcoin).unwrap().to_string(),
-////!         "32aAVauGwencZwisuvd3anhhhQhNZQPyHv"
-////!     );
-////!
-////!     // Estimate the satisfaction cost
-////!     assert_eq!(desc.max_satisfaction_weight(), 293);
-////! }
-////! ```
-////!
-//a
+//!
+//! ## Deriving an address from a descriptor
+//!
+//! ```rust
+//! extern crate bitcoin;
+//! extern crate bitcoin_hashes;
+//! extern crate miniscript;
+//!
+//! use std::str::FromStr;
+//!
+//! fn main() {
+//!     let desc = miniscript::Descriptor::<
+//!         bitcoin::PublicKey,
+//!         miniscript::DummyKeyHash,
+//!     >::from_str("\
+//!         sh(wsh(or_d(\
+//!             c:pk(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261),\
+//!             c:pk(020e0338c96a8870479f2396c373cc7696ba124e8635d41b0ea581112b67817261)\
+//!         )))\
+//!     ").unwrap();
+//!
+//!     // Derive the P2SH address
+//!     assert_eq!(
+//!         desc.address(bitcoin::Network::Bitcoin).unwrap().to_string(),
+//!         "32aAVauGwencZwisuvd3anhhhQhNZQPyHv"
+//!     );
+//!
+//!     // Estimate the satisfaction cost
+//!     assert_eq!(desc.max_satisfaction_weight(), 293);
+//! }
+//! ```
+//!
+
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
 #[cfg(all(test, feature = "unstable"))] extern crate test;
 
@@ -102,9 +102,9 @@ use bitcoin::blockdata::{opcodes, script};
 use bitcoin_hashes::{Hash, hash160, sha256};
 
 pub use miniscript::astelem::AstElem;
-//pub use descriptor::Descriptor;
+pub use descriptor::Descriptor;
 pub use miniscript::Miniscript;
-//pub use miniscript::satisfy::{BitcoinSig, Satisfier};
+pub use miniscript::satisfy::{BitcoinSig, Satisfier};
 
 /// Trait describing public key types which can be converted to bitcoin pubkeys
 pub trait ToPublicKey {
@@ -215,8 +215,8 @@ pub enum Error {
     NonMinimalVerify(miniscript::lex::Token),
     /// Push was illegal in some context
     InvalidPush(Vec<u8>),
-//    /// PSBT-related error
-//    Psbt(psbt::Error),
+    /// PSBT-related error
+    Psbt(psbt::Error),
     /// rust-bitcoin script error
     Script(script::Error),
     /// A `CHECKMULTISIG` opcode was preceded by a number > 20
@@ -318,7 +318,7 @@ impl fmt::Display for Error {
             Error::NonMinimalVerify(tok) => write!(f, "{} VERIFY", tok),
             Error::InvalidPush(ref push) =>
                 write!(f, "invalid push {:?}", push), // TODO hexify this
-//            Error::Psbt(ref e) => fmt::Display::fmt(e, f),
+            Error::Psbt(ref e) => fmt::Display::fmt(e, f),
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n)
                 => write!(f, "checkmultisig with {} keys", n),
@@ -362,13 +362,13 @@ impl fmt::Display for Error {
     }
 }
 
-//#[doc(hidden)]
-//impl From<psbt::Error> for Error {
-//    fn from(e: psbt::Error) -> Error {
-//        Error::Psbt(e)
-//    }
-//}
-//
+#[doc(hidden)]
+impl From<psbt::Error> for Error {
+    fn from(e: psbt::Error) -> Error {
+        Error::Psbt(e)
+    }
+}
+
 /// The size of an encoding of a number in Script
 pub fn script_num_size(n: usize) -> usize {
     match n {

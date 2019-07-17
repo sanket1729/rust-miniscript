@@ -185,8 +185,8 @@ impl<Pk, Pkh: Clone> Miniscript<Pk, Pkh> {
         Ok(Miniscript{
             //directly copying the type nad ext is safe because translating public
             //key should not change any properties
-            ty: self.ty.clone(),
-            ext: self.ext.clone(),
+            ty: self.ty,
+            ext: self.ext,
             node: inner,
         })
     }
@@ -201,8 +201,8 @@ impl<Pk: Clone, Pkh> Miniscript<Pk, Pkh> {
         Ok(Miniscript{
             //directly copying the type nad ext is safe because translating public
             //key should not change any properties
-            ty: self.ty.clone(),
-            ext: self.ext.clone(),
+            ty: self.ty,
+            ext: self.ext,
             node: inner,
         })
     }

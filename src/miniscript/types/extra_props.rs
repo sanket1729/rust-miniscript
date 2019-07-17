@@ -24,11 +24,11 @@ pub enum LegacySafe {
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct ExtData{
     ///enum sorting whether the fragment is safe to be in used in pre-segwit context
-    legacy_safe: LegacySafe,
+    pub legacy_safe: LegacySafe,
     /// The number of bytes needed to encode its scriptpubkey
-    pk_cost: usize,
+    pub pk_cost: usize,
     /// Whether this fragment can be verify-wrapped for free
-    has_verify_form: bool,
+    pub has_verify_form: bool,
 }
 
 impl Property for ExtData {

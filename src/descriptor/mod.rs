@@ -32,7 +32,6 @@ use std::str::{self, FromStr};
 use expression;
 use miniscript::Miniscript;
 use Error;
-//use miniscript::satisfy::Satisfier;
 use Satisfier;
 use ToPublicKey;
 use ToPublicKeyHash;
@@ -584,7 +583,7 @@ mod tests {
     use Miniscript;
     use descriptor::Descriptor;
     use DummyKeyHash;
-    use miniscript::satisfy::Satisfier;
+    use Satisfier;
     use miniscript::types::Type;
     use miniscript::types::ExtData;
     use miniscript::types::Property;

@@ -259,8 +259,13 @@ impl Property for ExtData {
         })
     }
 
-    fn and_or(_a: Self, _b: Self, _c: Self) -> Result<Self, ErrorKind> {
-        unimplemented!("compiler doesn't support andor yet")
+    fn and_or(a: Self, b: Self, c: Self) -> Result<Self, ErrorKind> {
+        Ok(ExtData {
+            legacy_safe: legacy_safe2(
+                legacy_safe2(a.legacy_safe, b.legacy_safe),c.legacy_safe),
+            pk_cost: a.pk_cost + b.pk_cost + c.pk_cost + 3,
+            has_verify_form: b.has_verify_form && c.has_verify_form,
+        })
     }
 
     fn threshold<S>(
@@ -289,7 +294,7 @@ impl Property for ExtData {
     /// Miniscript have been computed already.
     fn type_check<Pk, Pkh, C>(
         fragment: &AstElem<Pk, Pkh>,
-        mut child: C,
+        _child: C,
     ) -> Result<Self, Error<Pk, Pkh>>
         where
             C: FnMut(usize) -> Option<Self>,

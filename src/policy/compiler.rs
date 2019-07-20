@@ -78,13 +78,7 @@ impl Property for CompilerExtData {
         }
     }
 
-    fn from_multi(k: usize, n: usize) -> Self {
-        let num_cost = match(k > 16, n > 16) {
-            (true, true) => 4,
-            (false, true) => 3,
-            (true, false) => 3,
-            (false, false) => 2,
-        };
+    fn from_multi(k: usize, _n: usize) -> Self {
         CompilerExtData {
             branch_prob: None,
             sat_cost: 1.0 + 73.0 * k as f64,
@@ -129,7 +123,7 @@ impl Property for CompilerExtData {
         }
     }
 
-    fn from_time(t: u32) -> Self {
+    fn from_time(_t: u32) -> Self {
         CompilerExtData {
             branch_prob: None,
             sat_cost: 0.0,
@@ -312,7 +306,6 @@ impl Property for CompilerExtData {
     where S: FnMut(usize) -> Result<Self, types::ErrorKind>
     {
         let k_over_n = k as f64 / n as f64;
-        let mut pk_cost = 1 + script_num_cost(k as u32);
         let mut sat_cost = 0.0;
         let mut dissat_cost = 0.0;
         for i in 0..n {
@@ -576,20 +569,6 @@ where
             Some((_, astelem)) => Some(astelem),
             None => self.origin.take()
         }
-    }
-}
-
-fn script_num_cost(n: u32) -> usize {
-    if n <= 16 {
-        1
-    } else if n < 0x80 {
-        2
-    } else if n < 0x8000 {
-        3
-    } else if n < 0x800000 {
-        4
-    } else {
-        5
     }
 }
 

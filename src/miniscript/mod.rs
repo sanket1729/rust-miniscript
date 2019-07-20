@@ -28,7 +28,7 @@
 use std::{fmt, str};
 use std;
 
-use ::{bitcoin, AstElem};
+use ::{bitcoin};
 use bitcoin::blockdata::script;
 use bitcoin_hashes::hash160;
 
@@ -45,10 +45,8 @@ use ToPublicKeyHash;
 use self::lex::{lex, TokenIter};
 use self::satisfy::{Satisfiable, Satisfier};
 use self::types::Property;
-use miniscript::types::{Type, Correctness};
+use miniscript::types::Type;
 use miniscript::types::extra_props::ExtData;
-use std::path::Component::Prefix;
-use ::Error::TypeCheck;
 use std::fmt::Display;
 
 /// Top-level script AST type
@@ -336,8 +334,7 @@ impl<'de, Pk, Pkh> de::Deserialize<'de> for Miniscript<Pk, Pkh> where
 #[cfg(test)]
 mod tests {
     use super::Miniscript;
-    use Satisfier;
-    use ::{DummyKey, ToPublicKeyHash};
+    use ::{DummyKey};
     use DummyKeyHash;
     use miniscript::astelem::AstElem;
     use miniscript::types::{self, Property, Type, ExtData};
@@ -349,9 +346,7 @@ mod tests {
     use secp256k1;
     use std::fmt;
     use std::str::FromStr;
-    use ToPublicKey;
 
-    type DummyScript = Miniscript<DummyKey, DummyKeyHash>;
     type BScript = Miniscript<bitcoin::PublicKey, hash160::Hash>;
 
     fn pubkeys(n: usize) -> Vec<PublicKey> {
@@ -504,10 +499,7 @@ mod tests {
     #[test]
     fn serialize() {
         let keys = pubkeys(5);
-        let dummy_hash = hash160::Hash::from_inner([0; 20]);
-
         roundtrip("c:pk_h(0000000000000000000000000000000000000000)",
-//            &Miniscript(AstElem::Check(Box::new(AstElem::PkH(dummy_hash)))),
             "\
                 Script(OP_DUP OP_HASH160 OP_PUSHBYTES_20 \
                 0000000000000000000000000000000000000000 \

@@ -303,8 +303,7 @@ pub fn parse(
                     tokens,
                     Tk::ToAltStack => {},
                 );
-                term.push_ast1(AstElem::Alt);
-//                rewrap1(&mut term, AstElem::Alt);
+                term.push_ast1(AstElem::Alt)?;
             },
             Some(NonTerm::Check) => term.push_ast1(AstElem::Check)?,
             Some(NonTerm::DupIf) => term.push_ast1(AstElem::DupIf)?,

@@ -17,14 +17,11 @@ pub mod malleability;
 pub mod extra_props;
 
 use std::{error, fmt};
-use std;
 
 use miniscript::astelem::AstElem;
 pub use self::correctness::{Correctness, Base, Input};
 pub use self::malleability::{Dissat, Malleability};
 pub use self::extra_props::ExtData;
-use Miniscript;
-use ::Error::TypeCheck;
 
 
 /// None-returning function to help type inference when we need a
@@ -773,7 +770,7 @@ impl Property for Type {
     /// Miniscript have been computed already.
     fn type_check<Pk, Pkh, C>(
         fragment: &AstElem<Pk, Pkh>,
-        mut child: C,
+        _child: C,
     ) -> Result<Self, Error<Pk, Pkh>>
         where
             C: FnMut(usize) -> Option<Self>,

@@ -243,16 +243,11 @@ impl<Pk, Pkh> expression::FromTree for Miniscript<Pk, Pkh> where
     fn from_tree(top: &expression::Tree) -> Result<Miniscript<Pk, Pkh>, Error> {
         let inner: astelem::AstElem<Pk, Pkh>
             = expression::FromTree::from_tree(top)?;
-        let type_check = types::Type::type_check(&inner, |_| None)?;
-        if type_check.corr.base == types::Base::B {
-            Ok(Miniscript{
-                ty: Type::type_check(&inner, |_| None)?,
-                ext: ExtData::type_check(&inner, |_| None)?,
-                node: inner,
-            })
-        } else {
-            Err(Error::NonTopLevel(format!("{:?}", inner)))
-        }
+        Ok(Miniscript {
+            ty: Type::type_check(&inner, |_| None)?,
+            ext: ExtData::type_check(&inner, |_| None)?,
+            node: inner,
+        })
     }
 }
 
@@ -272,7 +267,13 @@ impl<Pk, Pkh> str::FromStr for Miniscript<Pk, Pkh> where
         }
 
         let top = expression::Tree::from_str(s)?;
-        expression::FromTree::from_tree(&top)
+        let ms : Miniscript<Pk, Pkh> = expression::FromTree::from_tree(&top)?;
+
+        if ms.ty.corr.base != types::Base::B {
+            Err(Error::NonTopLevel(format!("{:?}", ms)))
+        } else {
+            Ok(ms)
+        }
     }
 }
 
@@ -341,7 +342,7 @@ mod tests {
     use miniscript::astelem::AstElem;
     use miniscript::types::{self, Property, Type, ExtData};
     use hex_script;
-//    use policy::Liftable;
+    use policy::Liftable;
 
     use bitcoin::{self, PublicKey};
     use bitcoin_hashes::{Hash, hash160, sha256};
@@ -417,18 +418,16 @@ mod tests {
         assert_eq!(roundtrip, script);
     }
 
-//    fn roundtrip<Pk, Pkh>(ms_str: String, s: &str) where
-//        Pk: Clone + fmt::Debug + fmt::Display + FromStr + Eq,
-//        Pkh: Clone + fmt::Debug + fmt::Display + FromStr + Eq,
-//    {
-//        let tree = Miniscript::<PublicKey, DummyKeyHash>::from_str(&ms_str).unwrap();
-//        assert_eq!(tree.ty.corr.base, types::Base::B);
-//        let ser = tree.encode();
-//        assert_eq!(ser.len(), tree.script_size());
-//        assert_eq!(ser.to_string(), s);
-//        let deser = Miniscript::parse(&ser).expect("deserialize result of serialize");
-//        assert_eq!(tree, deser);
-//    }
+    fn roundtrip(ms_str: &str, s: &str) where
+    {
+        let tree = Miniscript::<PublicKey, hash160::Hash>::from_str(&ms_str).unwrap();
+        assert_eq!(tree.ty.corr.base, types::Base::B);
+        let ser = tree.encode();
+        assert_eq!(ser.len(), tree.script_size());
+        assert_eq!(ser.to_string(), s);
+        let deser = Miniscript::parse(&ser).expect("deserialize result of serialize");
+        assert_eq!(tree, deser);
+    }
 
     #[test]
     fn basic() {
@@ -507,94 +506,91 @@ mod tests {
         let keys = pubkeys(5);
         let dummy_hash = hash160::Hash::from_inner([0; 20]);
 
-//        roundtrip("c:pk_h(0000000000000000000000000000000000000000)",
-////            &Miniscript(AstElem::Check(Box::new(AstElem::PkH(dummy_hash)))),
-//            "\
-//                Script(OP_DUP OP_HASH160 OP_PUSHBYTES_20 \
-//                0000000000000000000000000000000000000000 \
-//                OP_EQUALVERIFY OP_CHECKSIG)\
-//            ",
-//        );
+        roundtrip("c:pk_h(0000000000000000000000000000000000000000)",
+//            &Miniscript(AstElem::Check(Box::new(AstElem::PkH(dummy_hash)))),
+            "\
+                Script(OP_DUP OP_HASH160 OP_PUSHBYTES_20 \
+                0000000000000000000000000000000000000000 \
+                OP_EQUALVERIFY OP_CHECKSIG)\
+            ",
+        );
 
-//        roundtrip(
-//            &Miniscript(AstElem::Check(Box::new(AstElem::Pk(keys[0].clone())))),
-//            "Script(OP_PUSHBYTES_33 028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa OP_CHECKSIG)"
-//        );
-//        roundtrip(
-//            &Miniscript(AstElem::ThreshM(3, keys.clone())),
-//            "Script(OP_PUSHNUM_3 OP_PUSHBYTES_33 028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa OP_PUSHBYTES_33 03ab1ac1872a38a2f196bed5a6047f0da2c8130fe8de49fc4d5dfb201f7611d8e2 OP_PUSHBYTES_33 039729247032c0dfcf45b4841fcd72f6e9a2422631fc3466cf863e87154754dd40 OP_PUSHBYTES_33 032564fe9b5beef82d3703a607253f31ef8ea1b365772df434226aee642651b3fa OP_PUSHBYTES_33 0289637f97580a796e050791ad5a2f27af1803645d95df021a3c2d82eb8c2ca7ff OP_PUSHNUM_5 OP_CHECKMULTISIG)"
-//        );
-//
-//        // Liquid policy
-//        roundtrip(
-//            &Miniscript(AstElem::OrD(
-//                Box::new(AstElem::ThreshM(2, keys[0..2].to_owned())),
-//                Box::new(AstElem::AndV(
-//                    Box::new(AstElem::Verify(
-//                        Box::new(AstElem::ThreshM(2, keys[3..5].to_owned()))
-//                    )),
-//                    Box::new(AstElem::After(10000)),
-//                ),
-//            ))),
-//            "Script(OP_PUSHNUM_2 OP_PUSHBYTES_33 028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa \
-//                                  OP_PUSHBYTES_33 03ab1ac1872a38a2f196bed5a6047f0da2c8130fe8de49fc4d5dfb201f7611d8e2 \
-//                                  OP_PUSHNUM_2 OP_CHECKMULTISIG \
-//                     OP_IFDUP OP_NOTIF \
-//                         OP_PUSHNUM_2 OP_PUSHBYTES_33 032564fe9b5beef82d3703a607253f31ef8ea1b365772df434226aee642651b3fa \
-//                                      OP_PUSHBYTES_33 0289637f97580a796e050791ad5a2f27af1803645d95df021a3c2d82eb8c2ca7ff \
-//                                      OP_PUSHNUM_2 OP_CHECKMULTISIGVERIFY \
-//                         OP_PUSHBYTES_2 1027 OP_NOP3 \
-//                     OP_ENDIF)"
-//        );
-//
-//        let miniscript = Miniscript::<_, DummyKeyHash>::from(AstElem::OrD(
-//            Box::new(AstElem::ThreshM(3, keys[0..3].to_owned())),
-//            Box::new(AstElem::AndV(
-//                Box::new(AstElem::Verify(
-//                    Box::new(AstElem::ThreshM(2, keys[3..5].to_owned()))
-//                )),
-//                Box::new(AstElem::After(10000)),
-//            )),
-//        ));
-//
-//        let mut abs = miniscript.into_lift();
-//        assert_eq!(abs.n_keys(), 5);
-//        assert_eq!(abs.minimum_n_keys(), 2);
-//        abs = abs.at_age(10000);
-//        assert_eq!(abs.n_keys(), 5);
-//        assert_eq!(abs.minimum_n_keys(), 2);
-//        abs = abs.at_age(9999);
-//        assert_eq!(abs.n_keys(), 3);
-//        assert_eq!(abs.minimum_n_keys(), 3);
-//        abs = abs.at_age(0);
-//        assert_eq!(abs.n_keys(), 3);
-//        assert_eq!(abs.minimum_n_keys(), 3);
-//
-//        roundtrip(
-//            &Miniscript(AstElem::After(921)),
-//            "Script(OP_PUSHBYTES_2 9903 OP_NOP3)"
-//        );
-//
-//        roundtrip(
-//            &Miniscript(AstElem::Sha256(sha256::Hash::hash(&[]))),
-//            "Script(OP_SIZE OP_PUSHBYTES_1 20 OP_EQUALVERIFY OP_SHA256 OP_PUSHBYTES_32 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 OP_EQUAL)"
-//        );
-//
-//        roundtrip(
-//            &Miniscript(AstElem::ThreshM(3, keys[0..5].to_owned())),
-//            "Script(OP_PUSHNUM_3 \
-//                    OP_PUSHBYTES_33 028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa \
-//                    OP_PUSHBYTES_33 03ab1ac1872a38a2f196bed5a6047f0da2c8130fe8de49fc4d5dfb201f7611d8e2 \
-//                    OP_PUSHBYTES_33 039729247032c0dfcf45b4841fcd72f6e9a2422631fc3466cf863e87154754dd40 \
-//                    OP_PUSHBYTES_33 032564fe9b5beef82d3703a607253f31ef8ea1b365772df434226aee642651b3fa \
-//                    OP_PUSHBYTES_33 0289637f97580a796e050791ad5a2f27af1803645d95df021a3c2d82eb8c2ca7ff \
-//                    OP_PUSHNUM_5 OP_CHECKMULTISIG)"
-//        );
-//
-//        roundtrip(
-//            &Miniscript(AstElem::Sha256(sha256::Hash::hash(&[]))),
-//            "Script(OP_SIZE OP_PUSHBYTES_1 20 OP_EQUALVERIFY OP_SHA256 OP_PUSHBYTES_32 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 OP_EQUAL)"
-//        );
+        roundtrip(&format!("c:pk({})", keys[0].to_string()),
+            "Script(OP_PUSHBYTES_33 028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa OP_CHECKSIG)"
+        );
+        roundtrip(&format!("thresh_m(3,{},{},{},{},{})",
+                          keys[0].to_string(),
+                          keys[1].to_string(),
+                          keys[2].to_string(),
+                          keys[3].to_string(),
+                          keys[4].to_string()),
+            "Script(OP_PUSHNUM_3 OP_PUSHBYTES_33 028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa OP_PUSHBYTES_33 03ab1ac1872a38a2f196bed5a6047f0da2c8130fe8de49fc4d5dfb201f7611d8e2 OP_PUSHBYTES_33 039729247032c0dfcf45b4841fcd72f6e9a2422631fc3466cf863e87154754dd40 OP_PUSHBYTES_33 032564fe9b5beef82d3703a607253f31ef8ea1b365772df434226aee642651b3fa OP_PUSHBYTES_33 0289637f97580a796e050791ad5a2f27af1803645d95df021a3c2d82eb8c2ca7ff OP_PUSHNUM_5 OP_CHECKMULTISIG)"
+        );
+
+        // Liquid policy
+        let ms_str = &format!("or_d(thresh_m(2,{},{}),and_v(v:thresh_m(2,{},{}),after(10000)))",
+                          keys[0].to_string(),
+                          keys[1].to_string(),
+                          keys[3].to_string(),
+                          keys[4].to_string());
+        roundtrip(ms_str,
+            "Script(OP_PUSHNUM_2 OP_PUSHBYTES_33 028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa \
+                                  OP_PUSHBYTES_33 03ab1ac1872a38a2f196bed5a6047f0da2c8130fe8de49fc4d5dfb201f7611d8e2 \
+                                  OP_PUSHNUM_2 OP_CHECKMULTISIG \
+                     OP_IFDUP OP_NOTIF \
+                         OP_PUSHNUM_2 OP_PUSHBYTES_33 032564fe9b5beef82d3703a607253f31ef8ea1b365772df434226aee642651b3fa \
+                                      OP_PUSHBYTES_33 0289637f97580a796e050791ad5a2f27af1803645d95df021a3c2d82eb8c2ca7ff \
+                                      OP_PUSHNUM_2 OP_CHECKMULTISIGVERIFY \
+                         OP_PUSHBYTES_2 1027 OP_NOP3 \
+                     OP_ENDIF)"
+        );
+
+        let ms_str = &format!("or_d(thresh_m(3,{},{},{}),and_v(v:thresh_m(2,{},{}),after(10000)))",
+                              keys[0].to_string(),
+                              keys[1].to_string(),
+                              keys[2].to_string(),
+                              keys[3].to_string(),
+                              keys[4].to_string(),
+        );
+        let miniscript = Miniscript::<PublicKey, hash160::Hash>::from_str(ms_str).unwrap();
+
+        let mut abs = miniscript.into_lift();
+        assert_eq!(abs.n_keys(), 5);
+        assert_eq!(abs.minimum_n_keys(), 2);
+        abs = abs.at_age(10000);
+        assert_eq!(abs.n_keys(), 5);
+        assert_eq!(abs.minimum_n_keys(), 2);
+        abs = abs.at_age(9999);
+        assert_eq!(abs.n_keys(), 3);
+        assert_eq!(abs.minimum_n_keys(), 3);
+        abs = abs.at_age(0);
+        assert_eq!(abs.n_keys(), 3);
+        assert_eq!(abs.minimum_n_keys(), 3);
+
+        roundtrip(
+            "after(921)",
+            "Script(OP_PUSHBYTES_2 9903 OP_NOP3)"
+        );
+
+        roundtrip(&format!("sha256({})", sha256::Hash::hash(&[])),
+            "Script(OP_SIZE OP_PUSHBYTES_1 20 OP_EQUALVERIFY OP_SHA256 OP_PUSHBYTES_32 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 OP_EQUAL)"
+        );
+
+        roundtrip(
+            &format!("thresh_m(3,{},{},{},{},{})",
+                     keys[0].to_string(),
+                     keys[1].to_string(),
+                     keys[2].to_string(),
+                     keys[3].to_string(),
+                     keys[4].to_string(),),
+            "Script(OP_PUSHNUM_3 \
+                    OP_PUSHBYTES_33 028c28a97bf8298bc0d23d8c749452a32e694b65e30a9472a3954ab30fe5324caa \
+                    OP_PUSHBYTES_33 03ab1ac1872a38a2f196bed5a6047f0da2c8130fe8de49fc4d5dfb201f7611d8e2 \
+                    OP_PUSHBYTES_33 039729247032c0dfcf45b4841fcd72f6e9a2422631fc3466cf863e87154754dd40 \
+                    OP_PUSHBYTES_33 032564fe9b5beef82d3703a607253f31ef8ea1b365772df434226aee642651b3fa \
+                    OP_PUSHBYTES_33 0289637f97580a796e050791ad5a2f27af1803645d95df021a3c2d82eb8c2ca7ff \
+                    OP_PUSHNUM_5 OP_CHECKMULTISIG)"
+        );
     }
 
     #[test]

@@ -579,19 +579,13 @@ mod tests {
     use bitcoin::blockdata::{opcodes, script};
     use bitcoin_hashes::{hash160, sha256};
     use bitcoin_hashes::hex::FromHex;
-    use secp256k1;
-
+    use ::{secp256k1, AstElem};
     use std::str::FromStr;
-
-    use miniscript::astelem;
     use miniscript::satisfy::BitcoinSig;
     use Miniscript;
     use descriptor::Descriptor;
     use DummyKeyHash;
     use Satisfier;
-    use miniscript::types::Type;
-    use miniscript::types::ExtData;
-    use miniscript::types::Property;
 
     type StdDescriptor = Descriptor<PublicKey, DummyKeyHash>;
     const TEST_PK: &'static str = "pk(\
@@ -774,16 +768,7 @@ mod tests {
         }
 
         let satisfier = SimpleSat { sig, pk };
-        let ms :Miniscript<_, DummyKeyHash> = Miniscript {
-            node: astelem::AstElem::Check(Box::new(
-                Miniscript {
-                    node: astelem::AstElem::Pk(pk),
-                    ty: Type::from_pk(),
-                    ext: ExtData::from_pk()
-                })),
-            ty: Type::cast_check(Type::from_pk()).unwrap(),
-            ext: ExtData::cast_check(ExtData::from_pk()).unwrap()
-        };
+        let ms :Miniscript<_, DummyKeyHash> = Miniscript::from_ast(AstElem::Pk(pk)).unwrap();
 
         let mut txin = bitcoin::TxIn {
             previous_output: bitcoin::OutPoint::default(),

@@ -78,15 +78,6 @@ pub struct Correctness {
     pub unit: bool,
 }
 
-pub fn dummy_correctness() -> Correctness{
-    Correctness {
-        base: Base::B,
-        input: Input::Zero,
-        dissatisfiable: false,
-        unit: true,
-    }
-}
-
 impl Property for Correctness {
     fn sanity_checks(&self) {
         match self.base {

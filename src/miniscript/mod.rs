@@ -26,7 +26,6 @@
 
 #[cfg(feature = "serde")] use serde::{de, ser};
 use std::{fmt, str};
-use std;
 
 use ::{bitcoin};
 use bitcoin::blockdata::script;
@@ -47,7 +46,6 @@ use self::satisfy::{Satisfiable, Satisfier};
 use self::types::Property;
 use miniscript::types::Type;
 use miniscript::types::extra_props::ExtData;
-use std::fmt::Display;
 
 /// Top-level script AST type
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -72,7 +70,7 @@ where
 }
 
 impl<Pk, Pkh> Miniscript<Pk, Pkh>
-    where Pk : fmt::Debug + Display + Clone, Pkh: fmt::Debug + Display + Clone
+    where Pk : fmt::Debug + fmt::Display + Clone, Pkh: fmt::Debug + fmt::Display + Clone
 {
     /// Add type information(Type and Extdata) to Miniscript based on
     /// `AstElem` fragment. Dependant on display and clone because it is used
@@ -85,7 +83,6 @@ impl<Pk, Pkh> Miniscript<Pk, Pkh>
         })
     }
 }
-
 
 impl<Pk: fmt::Display, Pkh: fmt::Display> fmt::Display for Miniscript<Pk, Pkh> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -220,8 +217,8 @@ impl<Pk, Pkh> Miniscript<Pk, Pkh> {
 }
 
 impl<Pk, Pkh> expression::FromTree for Box<Miniscript<Pk, Pkh>> where
-    Pk: str::FromStr + std::fmt::Display + fmt::Debug + Clone,
-    Pkh: str::FromStr + std::fmt::Display + fmt::Debug + Clone,
+    Pk: str::FromStr + fmt::Display + fmt::Debug + Clone,
+    Pkh: str::FromStr + fmt::Display + fmt::Debug + Clone,
     <Pk as str::FromStr>::Err: ToString,
     <Pkh as str::FromStr>::Err: ToString,
 {
@@ -344,7 +341,7 @@ mod tests {
     use bitcoin::{self, PublicKey};
     use bitcoin_hashes::{Hash, hash160, sha256};
     use secp256k1;
-    use std::fmt;
+    use fmt;
     use std::str::FromStr;
 
     type BScript = Miniscript<bitcoin::PublicKey, hash160::Hash>;

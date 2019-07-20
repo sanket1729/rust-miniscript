@@ -84,9 +84,7 @@ pub enum ErrorKind {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct Error<Pk: Clone, Pkh: Clone>
-
-{
+pub struct Error<Pk: Clone, Pkh: Clone> {
     /// The fragment that failed typecheck
     pub fragment: AstElem<Pk, Pkh>,
     /// The reason that typechecking failed

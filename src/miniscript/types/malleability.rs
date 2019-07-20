@@ -53,14 +53,6 @@ pub struct Malleability {
     pub non_malleable: bool,
 }
 
-pub fn dummy_malleability() -> Malleability{
-    Malleability {
-        dissat: Dissat::None,
-        safe: false,
-        non_malleable: true,
-    }
-}
-
 impl Property for Malleability {
     fn from_true() -> Self {
         Malleability {

@@ -148,7 +148,6 @@ impl ToPublicKeyHash for bitcoin::PublicKey {
     }
 }
 
-
 /// Dummy key which de/serializes to the empty string; useful sometimes for testing
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Debug)]
 pub struct DummyKey;
@@ -301,7 +300,7 @@ impl error::Error for Error {
     fn cause(&self) -> Option<&error::Error> {
         match *self {
             Error::BadPubkey(ref e) => Some(e),
-//            Error::Psbt(ref e) => Some(e),
+            Error::Psbt(ref e) => Some(e),
             _ => None,
         }
     }

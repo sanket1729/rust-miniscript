@@ -3,6 +3,7 @@
 
 use super::{ErrorKind, Property, Error};
 use AstElem;
+use script_num_size;
 
 /// Whether a fragment is OK to be used in non-segwit scripts
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -122,7 +123,7 @@ impl Property for ExtData {
     fn from_time(t: u32) -> Self {
         ExtData {
             legacy_safe: LegacySafe::LegacySafe,
-            pk_cost: script_num_cost(t) + 1,
+            pk_cost: script_num_size(t as usize) + 1,
             has_verify_form: false,
         }
     }
@@ -275,7 +276,7 @@ impl Property for ExtData {
     ) -> Result<Self, ErrorKind>
         where S: FnMut(usize) -> Result<Self, ErrorKind>
     {
-        let mut pk_cost = 1 + script_num_cost(k as u32);
+        let mut pk_cost = 1 + script_num_size(k);
         let mut legacy_safe = LegacySafe::LegacySafe;
         for i in 0..n {
 
@@ -441,16 +442,3 @@ fn legacy_safe2(a: LegacySafe, b: LegacySafe) -> LegacySafe{
     }
 }
 
-fn script_num_cost(n: u32) -> usize {
-    if n <= 16 {
-        1
-    } else if n < 0x80 {
-        2
-    } else if n < 0x8000 {
-        3
-    } else if n < 0x800000 {
-        4
-    } else {
-        5
-    }
-}

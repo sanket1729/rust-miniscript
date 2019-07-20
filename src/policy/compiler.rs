@@ -240,7 +240,6 @@ impl Property for CompilerExtData {
             .expect("BUG: left branch prob must be set for disjunctions");
         let rprob = r.branch_prob
             .expect("BUG: right branch prob must be set for disjunctions");
-        println!("{:?} {:?}", l, r);
         Ok(CompilerExtData {
             branch_prob: None,
             sat_cost: lprob * (l.sat_cost + r.dissat_cost.unwrap())

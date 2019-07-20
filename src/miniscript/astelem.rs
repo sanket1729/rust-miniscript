@@ -20,24 +20,23 @@
 //! are given on the Miniscript website.
 
 use std::{cmp, fmt, str};
-use std;
 
 use bitcoin::blockdata::{opcodes, script};
 use bitcoin_hashes::hex::FromHex;
 use bitcoin_hashes::{hash160, ripemd160, sha256, sha256d};
 
-use ::{Error};
-use ::{errstr};
-use ::{expression};
-use ::{script_num_size};
-use ::{ToPublicKey};
-use ::{ToPublicKeyHash};
+use Error;
+use errstr;
+use expression;
+use script_num_size;
+use ToPublicKey;
+use ToPublicKeyHash;
 use miniscript::types::{self, Property};
 use Miniscript;
 
 /// All AST elements
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AstElem<Pk, Pkh=hash160::Hash> {
+pub enum AstElem<Pk, Pkh> {
     /// `1`
     True,
     /// `0`
@@ -434,8 +433,8 @@ impl<Pk: fmt::Display, Pkh: fmt::Display> fmt::Display for AstElem<Pk, Pkh> {
 }
 
 impl<Pk, Pkh> expression::FromTree for Box<AstElem<Pk, Pkh>> where
-    Pk: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone,
-    Pkh: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone,
+    Pk: str::FromStr + fmt::Display + fmt::Debug + Clone,
+    Pkh: str::FromStr + fmt::Display + fmt::Debug + Clone,
     <Pk as str::FromStr>::Err: ToString,
     <Pkh as str::FromStr>::Err: ToString,
 {
@@ -445,8 +444,8 @@ impl<Pk, Pkh> expression::FromTree for Box<AstElem<Pk, Pkh>> where
 }
 
 impl<Pk, Pkh> expression::FromTree for AstElem<Pk, Pkh> where
-    Pk: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone,
-    Pkh: str::FromStr + std::fmt::Display + std::fmt::Debug + Clone,
+    Pk: str::FromStr + fmt::Display + fmt::Debug + Clone,
+    Pkh: str::FromStr + fmt::Display + fmt::Debug + Clone,
     <Pk as str::FromStr>::Err: ToString,
     <Pkh as str::FromStr>::Err: ToString,
 {

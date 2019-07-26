@@ -339,11 +339,11 @@ impl CompilerExtData {
         pk_cost as f64
             + self.sat_cost * sat_prob
             + match (dissat_prob, self.dissat_cost) {
-                (Some(prob), Some(cost)) => prob * cost,
-                (Some(_), None) => unreachable!(),
-                (None, Some(_)) => 0.0,
-                (None, None) => 0.0,
-            }
+            (Some(prob), Some(cost)) => prob * cost,
+            (Some(_), None) => 0.0,
+            (None, Some(_)) => 0.0,
+            (None, None) => 0.0,
+        }
     }
 }
 
@@ -393,6 +393,7 @@ struct Cast<Pk: MiniscriptKey> {
     ast_type: fn(types::Type) -> Result<types::Type, ErrorKind>,
     ext_data: fn(types::ExtData) -> Result<types::ExtData, ErrorKind>,
     comp_ext_data: fn(CompilerExtData) -> Result<CompilerExtData, types::ErrorKind>,
+    not_dissat: fn(Option<f64>) -> Option<f64>,
 }
 
 fn all_casts<Pk: MiniscriptKey>() -> [Cast<Pk>; 9] {
@@ -402,36 +403,42 @@ fn all_casts<Pk: MiniscriptKey>() -> [Cast<Pk>; 9] {
             ast_type: types::Type::cast_alt,
             ext_data: types::ExtData::cast_alt,
             comp_ext_data: CompilerExtData::cast_alt,
+            not_dissat: |x| x,
         },
         Cast {
             ext_data: types::ExtData::cast_swap,
             node: Terminal::Swap,
             ast_type: types::Type::cast_swap,
             comp_ext_data: CompilerExtData::cast_swap,
+            not_dissat: |x| x,
         },
         Cast {
             ext_data: types::ExtData::cast_check,
             node: Terminal::Check,
             ast_type: types::Type::cast_check,
             comp_ext_data: CompilerExtData::cast_check,
+            not_dissat: |x| x,
         },
         Cast {
             ext_data: types::ExtData::cast_dupif,
             node: Terminal::DupIf,
             ast_type: types::Type::cast_dupif,
             comp_ext_data: CompilerExtData::cast_dupif,
+            not_dissat: |_x| None,
         },
         Cast {
             ext_data: types::ExtData::cast_verify,
             node: Terminal::Verify,
             ast_type: types::Type::cast_verify,
             comp_ext_data: CompilerExtData::cast_verify,
+            not_dissat: |_x| None,
         },
         Cast {
             ext_data: types::ExtData::cast_nonzero,
             node: Terminal::NonZero,
             ast_type: types::Type::cast_nonzero,
             comp_ext_data: CompilerExtData::cast_nonzero,
+            not_dissat: |_x| None,
         },
         Cast {
             ext_data: types::ExtData::cast_true,
@@ -445,6 +452,7 @@ fn all_casts<Pk: MiniscriptKey>() -> [Cast<Pk>; 9] {
             },
             ast_type: types::Type::cast_true,
             comp_ext_data: CompilerExtData::cast_true,
+            not_dissat: |_x| None,
         },
         Cast {
             ext_data: types::ExtData::cast_unlikely,
@@ -458,6 +466,7 @@ fn all_casts<Pk: MiniscriptKey>() -> [Cast<Pk>; 9] {
             },
             ast_type: types::Type::cast_unlikely,
             comp_ext_data: CompilerExtData::cast_unlikely,
+            not_dissat: |x| x,
         },
         Cast {
             ext_data: types::ExtData::cast_likely,
@@ -471,6 +480,7 @@ fn all_casts<Pk: MiniscriptKey>() -> [Cast<Pk>; 9] {
             },
             ast_type: types::Type::cast_likely,
             comp_ext_data: CompilerExtData::cast_likely,
+            not_dissat: |x| x,
         },
     ]
 }
@@ -485,9 +495,8 @@ struct WrappingIter<Pk: MiniscriptKey> {
     /// Original un-casted astelem. Set to `None` when the iterator
     /// is exhausted
     origin: Option<AstElemExt<Pk>>,
-    /// Probability that this fragment will be satisfied
+
     sat_prob: f64,
-    /// Probability that this fragment will be dissatisfied
     dissat_prob: Option<f64>,
 }
 
@@ -508,9 +517,10 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
 
     fn next(&mut self) -> Option<AstElemExt<Pk>> {
         let current = match self.cast_stack.last() {
-            Some(&(_, ref astext)) => astext.clone(),
+            Some(&(_, ref astext)) =>
+                astext.clone(),
             None => match self.origin.as_ref() {
-                Some(astext) => astext.clone(),
+                Some(&ref ast) => ast.clone(),
                 None => return None,
             },
         };
@@ -525,11 +535,17 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
 
                 let comp_ext_data = (all_casts[i].comp_ext_data)(current.comp_ext_data)
                     .expect("if AST typeck passes then compiler ext typeck must");
+
                 let ms_ext_data = (all_casts[i].ext_data)(current.ms.ext)
                     .expect("if AST typeck passes then ext typeck must");
 
-                let cost =
-                    comp_ext_data.cost_1d(ms_ext_data.pk_cost, self.sat_prob, self.dissat_prob);
+                let mut wrap_dissat_prob = (all_casts[i].not_dissat)(self.dissat_prob);
+                if let (Some(_), None) = (self.dissat_prob, comp_ext_data.dissat_cost){
+                    wrap_dissat_prob = None;
+                };
+
+//                println!("{:?} {:?} {:?} {} {} {:?}", current, ms_type, comp_ext_data, i, p_sat, p_dissat);
+                let cost = comp_ext_data.cost_1d(ms_ext_data.pk_cost, self.sat_prob, wrap_dissat_prob);
                 let old_best_cost = self
                     .visited_types
                     .get(&ms_type)
@@ -553,7 +569,8 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
         }
         // If none were applicable, return the current result
         match self.cast_stack.pop() {
-            Some((_, astelem)) => Some(astelem),
+            Some((_, astelem) )=>
+                Some(astelem),
             None => self.origin.take(),
         }
     }
@@ -591,15 +608,12 @@ fn insert_best_wrapped<Pk: MiniscriptKey>(
     dissat_prob: Option<f64>,
 ) {
     for wrapped in data.wrappings(sat_prob, dissat_prob) {
-        let mut wrap_dissat_prob = dissat_prob;
-        match wrapped.ms.node {
-            Terminal::DupIf(_) | Terminal::Verify(_) | Terminal::NonZero(_) => {
-                wrap_dissat_prob = None
-            }
-            //propogate dissat prob for rest of the wrappers.
-            _ => (),
-        }
-        insert_best(map, wrapped, sat_prob, wrap_dissat_prob);
+        insert_best(
+            map,
+            wrapped,
+            sat_prob,
+            dissat_prob,
+        );
     }
 }
 
@@ -610,12 +624,20 @@ fn best_compilations<Pk: MiniscriptKey>(
 ) -> HashMap<types::Type, AstElemExt<Pk>> {
     let mut ret = HashMap::new();
     match *policy {
-        Concrete::Key(ref pk) => insert_best_wrapped(
-            &mut ret,
-            AstElemExt::terminal(Terminal::Pk(pk.clone())),
-            sat_prob,
-            dissat_prob,
-        ),
+        Concrete::Key(ref pk) => {
+            insert_best_wrapped(
+                &mut ret,
+                AstElemExt::terminal(Terminal::Pk(pk.clone())),
+                sat_prob,
+                dissat_prob,
+            );
+//            insert_best_wrapped(
+//            &mut ret,
+//            AstElemExt::terminal(Terminal::PkH(pk.to_pubkeyhash().clone())),
+//            sat_prob,
+//            dissat_prob,
+//            );
+        },
         Concrete::KeyHash(ref pkh) => insert_best_wrapped(
             &mut ret,
             AstElemExt::terminal(Terminal::PkH(pkh.clone())),
@@ -716,66 +738,47 @@ fn best_compilations<Pk: MiniscriptKey>(
             }
         }
         Concrete::Or(ref subs) => {
-            assert_eq!(subs.len(), 2, "or takes 2 args");
-            // FIXME sat_prob and dissat_prob are wrong here
-            let mut left = best_compilations(&subs[0].1, sat_prob, dissat_prob);
-            let mut right = best_compilations(&subs[1].1, sat_prob, dissat_prob);
             let total = (subs[0].0 + subs[1].0) as f64;
-            let lweight = subs[0].0 as f64 / total;
-            let rweight = subs[1].0 as f64 / total;
-            for l in left.values_mut() {
-                let lref = Arc::clone(&l.ms);
-                for r in right.values_mut() {
-                    struct Try<'l, 'r, Pk: MiniscriptKey + 'l + 'r> {
-                        left: &'l AstElemExt<Pk>,
-                        right: &'r AstElemExt<Pk>,
-                        ast: Terminal<Pk>,
-                    }
+            let lw = subs[0].0 as f64 / total;
+            let rw = subs[1].0 as f64 / total;
 
-                    impl<'l, 'r, Pk: MiniscriptKey + 'l + 'r> Try<'l, 'r, Pk> {
-                        fn swap(self) -> Try<'r, 'l, Pk> {
-                            Try {
-                                left: self.right,
-                                right: self.left,
-                                ast: match self.ast {
-                                    Terminal::OrB(l, r) => Terminal::OrB(r, l),
-                                    Terminal::OrD(l, r) => Terminal::OrD(r, l),
-                                    Terminal::OrC(l, r) => Terminal::OrC(r, l),
-                                    Terminal::OrI(l, r) => Terminal::OrI(r, l),
-                                    _ => unreachable!(),
-                                },
-                            }
-                        }
-                    }
+            //The different q values (dissatisfaction probabilities)
+            // for each compilation.
+            //p always stays the same
+            let dissat_probs = |w: f64| [
+                Some(w * sat_prob + dissat_prob.unwrap_or(0 as f64)),
+                Some(w * sat_prob),
+                dissat_prob,
+                None,
+            ];
 
-                    let rref = Arc::clone(&r.ms);
-                    let mut tries = [
-                        Some(Terminal::OrB(Arc::clone(&lref), Arc::clone(&rref))),
-                        Some(Terminal::OrD(Arc::clone(&lref), Arc::clone(&rref))),
-                        Some(Terminal::OrC(Arc::clone(&lref), Arc::clone(&rref))),
-                        Some(Terminal::OrI(Arc::clone(&lref), Arc::clone(&rref))),
-                    ];
-                    for opt in &mut tries {
-                        l.comp_ext_data.branch_prob = Some(lweight);
-                        r.comp_ext_data.branch_prob = Some(rweight);
-                        let d = Try {
-                            left: l,
-                            right: r,
-                            ast: opt.take().unwrap(),
-                        };
-                        let ast = d.ast.clone();
-                        if let Ok(new_ext) = AstElemExt::nonterminal(ast, d.left, d.right) {
-                            insert_best_wrapped(&mut ret, new_ext, sat_prob, dissat_prob);
-                        }
+            let mut l_comp = vec![];
+            let mut r_comp = vec![];
 
-                        let d = d.swap();
-                        if let Ok(new_ext) = AstElemExt::nonterminal(d.ast, d.left, d.right) {
-                            insert_best_wrapped(&mut ret, new_ext, sat_prob, dissat_prob);
-                        }
-                    }
-                }
+            for dissat_prob in dissat_probs(rw).iter(){
+                let mut l = best_compilations(&subs[0].1, lw*sat_prob, *dissat_prob);
+                l_comp.push(l);
             }
-        }
+
+            for dissat_prob in dissat_probs(lw).iter(){
+                let mut r = best_compilations(&subs[1].1, rw*sat_prob, *dissat_prob);
+                r_comp.push(r);
+            }
+            compile_or(&mut ret, &mut l_comp[0], &mut r_comp[0],[lw, rw], sat_prob, dissat_prob, Terminal::OrB);
+            compile_or(&mut ret, &mut r_comp[0], &mut l_comp[0],[rw, lw], sat_prob, dissat_prob, Terminal::OrB);
+
+            compile_or(&mut ret, &mut l_comp[0], &mut r_comp[2],[lw, rw], sat_prob, dissat_prob, Terminal::OrD);
+            compile_or(&mut ret, &mut r_comp[0], &mut l_comp[2],[rw, lw], sat_prob, dissat_prob, Terminal::OrD);
+
+            compile_or(&mut ret, &mut l_comp[1], &mut r_comp[3],[lw, rw], sat_prob, dissat_prob, Terminal::OrC);
+            compile_or(&mut ret, &mut r_comp[3], &mut l_comp[1],[rw, lw], sat_prob, dissat_prob, Terminal::OrC);
+
+            compile_or(&mut ret, &mut l_comp[2], &mut r_comp[3],[lw, rw], sat_prob, dissat_prob, Terminal::OrI);
+            compile_or(&mut ret, &mut r_comp[2], &mut l_comp[3],[rw, lw], sat_prob, dissat_prob, Terminal::OrI);
+
+            compile_or(&mut ret, &mut l_comp[3], &mut r_comp[2],[lw, rw], sat_prob, dissat_prob, Terminal::OrI);
+            compile_or(&mut ret, &mut r_comp[3], &mut l_comp[2],[rw, lw], sat_prob, dissat_prob, Terminal::OrI);
+        },
         Concrete::Threshold(k, ref subs) => {
             let n = subs.len();
             let k_over_n = k as f64 / n as f64;
@@ -833,6 +836,42 @@ pub fn best_compilation<Pk: MiniscriptKey>(policy: &Concrete<Pk>) -> Miniscript<
     let x = &*best_t(policy, 1.0, None).ms;
     x.clone()
 }
+/// Helper function to compile different types of or fragments.
+/// `sat_prob` and `dissat_prob` represent the sat and dissat probabilities of
+/// each sub branch. `weights` represent the odds for taking each sub branch
+fn compile_or<Pk, F>(
+    ret: &mut HashMap<types::Type, AstElemExt<Pk>>,
+    left_comp: &mut HashMap<types::Type, AstElemExt<Pk>>,
+    right_comp: &mut HashMap<types::Type, AstElemExt<Pk>>,
+    weights: [f64; 2],
+    sat_prob: f64,
+    dissat_prob: Option<f64>,
+    or_type: F,
+)
+    where Pk: MiniscriptKey,
+          F: Fn(Arc<Miniscript<Pk>>, Arc<Miniscript<Pk>>) -> Terminal<Pk>,
+{
+    for l in left_comp.values_mut() {
+        let lref = Box::new(l.ms.clone());
+        for r in right_comp.values_mut() {
+            let rref = Box::new(r.ms.clone());
+            let mut ast = or_type(Arc::clone(&lref), Arc::clone(&rref));
+            l.comp_ext_data.branch_prob = Some(weights[0]);
+            r.comp_ext_data.branch_prob = Some(weights[1]);
+            if let Ok(new_ext)
+            = AstElemExt::nonterminal(ast, l, r)
+            {
+                insert_best_wrapped(
+                    ret,
+                    new_ext,
+                    sat_prob,
+                    dissat_prob,
+                );
+            }
+        }
+    }
+}
+
 
 fn best_t<Pk: MiniscriptKey>(
     policy: &Concrete<Pk>,
@@ -957,6 +996,7 @@ mod tests {
     fn compile_q() {
         let policy = SPolicy::from_str("or(1@and(pk(),pk()),127@pk())").expect("parsing");
         let compilation = best_t(&policy, 1.0, None);
+        println!("{}", compilation.ms);
 
         assert_eq!(
             compilation
@@ -983,7 +1023,7 @@ mod tests {
             compilation
                 .comp_ext_data
                 .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
-            480.0 + 282.71484375
+            480.0 + 283.2109375
         );
         assert_eq!(
             policy.into_lift().sorted(),

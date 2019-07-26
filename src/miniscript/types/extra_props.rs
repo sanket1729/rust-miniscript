@@ -273,7 +273,7 @@ impl Property for ExtData {
     where
         S: FnMut(usize) -> Result<Self, ErrorKind>,
     {
-        let mut pk_cost = 1 + script_num_size(k);
+        let mut pk_cost = 1 + script_num_size(k);//Equal and k
         let mut legacy_safe = LegacySafe::LegacySafe;
         for i in 0..n {
             let sub = sub_ck(i)?;
@@ -282,7 +282,7 @@ impl Property for ExtData {
         }
         Ok(ExtData {
             legacy_safe: legacy_safe,
-            pk_cost: pk_cost,
+            pk_cost: pk_cost + n - 1,//all pk cost + (n-1)*ADD
             has_verify_form: true,
         })
     }

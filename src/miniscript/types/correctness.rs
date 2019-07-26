@@ -153,9 +153,9 @@ impl Property for Correctness {
     fn from_time(_: u32) -> Self {
         Correctness {
             base: Base::B,
-            input: Input::OneNonZero,
+            input: Input::Zero,
             dissatisfiable: false,
-            unit: true,
+            unit: false,
         }
     }
 
@@ -177,7 +177,10 @@ impl Property for Correctness {
                 Base::B => Base::W,
                 x => return Err(ErrorKind::ChildBase1(x)),
             },
-            input: Input::Any,
+            input: match self.input{
+                Input::One | Input::OneNonZero => Input::Any,
+                _ => return Err(ErrorKind::SwapNonOne),
+            },
             dissatisfiable: self.dissatisfiable,
             unit: self.unit,
         })
@@ -206,7 +209,7 @@ impl Property for Correctness {
                 _ => Input::AnyNonZero,
             },
             dissatisfiable: true,
-            unit: self.unit,
+            unit: true,
         })
     }
 

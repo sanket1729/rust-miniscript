@@ -316,7 +316,7 @@ impl Property for CompilerExtData {
         }
         Ok(CompilerExtData {
             branch_prob: None,
-            sat_cost: sat_cost * k_over_n,
+            sat_cost: sat_cost * k_over_n + dissat_cost*(1.0 - k_over_n),
             dissat_cost: Some(dissat_cost),
         })
     }
@@ -539,7 +539,7 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
                 let ms_ext_data = (all_casts[i].ext_data)(current.ms.ext)
                     .expect("if AST typeck passes then ext typeck must");
 
-                let mut wrap_dissat_prob = (all_casts[i].not_dissat)(self.dissat_prob);
+                let mut wrap_dissat_prob = self.dissat_prob;
                 if let (Some(_), None) = (self.dissat_prob, comp_ext_data.dissat_cost){
                     wrap_dissat_prob = None;
                 };
@@ -568,10 +568,16 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
             }
         }
         // If none were applicable, return the current result
-        match self.cast_stack.pop() {
-            Some((_, astelem) )=>
+        let ret = match self.cast_stack.pop() {
+            Some((_, astelem)) =>
                 Some(astelem),
             None => self.origin.take(),
+        };
+        match ret{
+            None => return None,
+            Some(ref r) if r.comp_ext_data.dissat_cost.is_none() &&
+                self.dissat_prob.is_some() => return self.next(),
+            _ => ret,
         }
     }
 }
@@ -852,9 +858,9 @@ fn compile_or<Pk, F>(
           F: Fn(Arc<Miniscript<Pk>>, Arc<Miniscript<Pk>>) -> Terminal<Pk>,
 {
     for l in left_comp.values_mut() {
-        let lref = Box::new(l.ms.clone());
+        let lref = Arc::clone(&l.ms);
         for r in right_comp.values_mut() {
-            let rref = Box::new(r.ms.clone());
+            let rref = Arc::clone(&r.ms);
             let mut ast = or_type(Arc::clone(&lref), Arc::clone(&rref));
             l.comp_ext_data.branch_prob = Some(weights[0]);
             r.comp_ext_data.branch_prob = Some(weights[1]);
@@ -993,6 +999,19 @@ mod tests {
     }
 
     #[test]
+    fn temp(){
+        let policy = SPolicy::from_str("thresh(2,pk(),pk(),pk(),after(100))")
+            .expect("parsing");
+//        let policy = SPolicy::from_str("or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)))")
+//            .expect("parsing");
+        let compilation = best_t(&policy, 1.0, None);
+        println!("{} ty {:?} ext {:?} cost {}",
+                 compilation.ms, compilation.ms.ty, compilation.ms.ext,
+                 compilation.comp_ext_data.cost_1d(compilation.ms.ext.pk_cost, 1.0, None));
+        dbg!(&compilation);
+    }
+
+    #[test]
     fn compile_q() {
         let policy = SPolicy::from_str("or(1@and(pk(),pk()),127@pk())").expect("parsing");
         let compilation = best_t(&policy, 1.0, None);
@@ -1023,7 +1042,7 @@ mod tests {
             compilation
                 .comp_ext_data
                 .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
-            480.0 + 283.2109375
+            772.140625
         );
         assert_eq!(
             policy.into_lift().sorted(),

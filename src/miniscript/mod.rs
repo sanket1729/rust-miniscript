@@ -60,7 +60,8 @@ pub struct Miniscript<Pk: MiniscriptKey> {
 
 impl<Pk: MiniscriptKey> fmt::Debug for Miniscript<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.node)
+        write!(f, "{:?}",
+               self.node,)
     }
 }
 

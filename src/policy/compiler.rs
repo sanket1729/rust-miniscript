@@ -17,7 +17,7 @@
 //! Optimizing compiler from concrete policies to Miniscript
 //!
 
-use std::collections::{hash_map, HashMap};
+use std::collections::{hash_map, HashMap, HashSet};
 use std::{cmp, f64};
 
 use miniscript::types::{self, ErrorKind, Property};
@@ -316,7 +316,7 @@ impl Property for CompilerExtData {
         }
         Ok(CompilerExtData {
             branch_prob: None,
-            sat_cost: sat_cost * k_over_n + dissat_cost*(1.0 - k_over_n),
+            sat_cost: sat_cost * k_over_n + dissat_cost * (1.0 - k_over_n),
             dissat_cost: Some(dissat_cost),
         })
     }
@@ -339,11 +339,11 @@ impl CompilerExtData {
         pk_cost as f64
             + self.sat_cost * sat_prob
             + match (dissat_prob, self.dissat_cost) {
-            (Some(prob), Some(cost)) => prob * cost,
-            (Some(_), None) => 0.0,
-            (None, Some(_)) => 0.0,
-            (None, None) => 0.0,
-        }
+                (Some(prob), Some(cost)) => prob * cost,
+                (Some(_), None) => 0.0,
+                (None, Some(_)) => 0.0,
+                (None, None) => 0.0,
+            }
     }
 }
 
@@ -396,7 +396,7 @@ struct Cast<Pk: MiniscriptKey> {
     not_dissat: fn(Option<f64>) -> Option<f64>,
 }
 
-fn all_casts<Pk: MiniscriptKey>() -> [Cast<Pk>; 9] {
+fn all_casts<Pk: MiniscriptKey>() -> [Cast<Pk>; 10] {
     [
         Cast {
             node: Terminal::Alt,
@@ -439,6 +439,13 @@ fn all_casts<Pk: MiniscriptKey>() -> [Cast<Pk>; 9] {
             ast_type: types::Type::cast_nonzero,
             comp_ext_data: CompilerExtData::cast_nonzero,
             not_dissat: |_x| None,
+        },
+        Cast {
+            ext_data: types::ExtData::cast_zeronotequal,
+            node: Terminal::ZeroNotEqual,
+            ast_type: types::Type::cast_zeronotequal,
+            comp_ext_data: CompilerExtData::cast_zeronotequal,
+            not_dissat: |x| None,
         },
         Cast {
             ext_data: types::ExtData::cast_true,
@@ -517,8 +524,7 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
 
     fn next(&mut self) -> Option<AstElemExt<Pk>> {
         let current = match self.cast_stack.last() {
-            Some(&(_, ref astext)) =>
-                astext.clone(),
+            Some(&(_, ref astext)) => astext.clone(),
             None => match self.origin.as_ref() {
                 Some(&ref ast) => ast.clone(),
                 None => return None,
@@ -539,13 +545,14 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
                 let ms_ext_data = (all_casts[i].ext_data)(current.ms.ext)
                     .expect("if AST typeck passes then ext typeck must");
 
-                let mut wrap_dissat_prob = self.dissat_prob;
-                if let (Some(_), None) = (self.dissat_prob, comp_ext_data.dissat_cost){
-                    wrap_dissat_prob = None;
-                };
+                //                let mut wrap_dissat_prob = self.dissat_prob;
+                //                if let (Some(_), None) = (self.dissat_prob, comp_ext_data.dissat_cost){
+                //                    wrap_dissat_prob = None;
+                //                };
 
-//                println!("{:?} {:?} {:?} {} {} {:?}", current, ms_type, comp_ext_data, i, p_sat, p_dissat);
-                let cost = comp_ext_data.cost_1d(ms_ext_data.pk_cost, self.sat_prob, wrap_dissat_prob);
+                //                println!("{:?} {:?} {:?} {} {} {:?}", current, ms_type, comp_ext_data, i, p_sat, p_dissat);
+                let cost =
+                    comp_ext_data.cost_1d(ms_ext_data.pk_cost, self.sat_prob, self.dissat_prob);
                 let old_best_cost = self
                     .visited_types
                     .get(&ms_type)
@@ -569,14 +576,14 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
         }
         // If none were applicable, return the current result
         let ret = match self.cast_stack.pop() {
-            Some((_, astelem)) =>
-                Some(astelem),
+            Some((_, astelem)) => Some(astelem),
             None => self.origin.take(),
         };
-        match ret{
+        match ret {
             None => return None,
-            Some(ref r) if r.comp_ext_data.dissat_cost.is_none() &&
-                self.dissat_prob.is_some() => return self.next(),
+            Some(ref r) if r.comp_ext_data.dissat_cost.is_none() && self.dissat_prob.is_some() => {
+                return self.next()
+            }
             _ => ret,
         }
     }
@@ -614,12 +621,10 @@ fn insert_best_wrapped<Pk: MiniscriptKey>(
     dissat_prob: Option<f64>,
 ) {
     for wrapped in data.wrappings(sat_prob, dissat_prob) {
-        insert_best(
-            map,
-            wrapped,
-            sat_prob,
-            dissat_prob,
-        );
+        insert_best(map, wrapped, sat_prob, dissat_prob);
+    }
+    for wrapped in data.wrappings(sat_prob, None) {
+        insert_best(map, wrapped, sat_prob, dissat_prob);
     }
 }
 
@@ -692,6 +697,9 @@ fn best_compilations<Pk: MiniscriptKey>(
         ),
         Concrete::And(ref subs) => {
             assert_eq!(subs.len(), 2, "and takes 2 args");
+            dbg!(&policy);
+            dbg!(sat_prob);
+            dbg!(dissat_prob);
             let left = best_compilations(&subs[0], sat_prob, dissat_prob);
             let right = best_compilations(&subs[1], sat_prob, dissat_prob);
             for l in left.values() {
@@ -751,40 +759,122 @@ fn best_compilations<Pk: MiniscriptKey>(
             //The different q values (dissatisfaction probabilities)
             // for each compilation.
             //p always stays the same
-            let dissat_probs = |w: f64| [
-                Some(w * sat_prob + dissat_prob.unwrap_or(0 as f64)),
-                Some(w * sat_prob),
-                dissat_prob,
-                None,
-            ];
+            let dissat_probs = |w: f64| -> Vec<Option<f64>> {
+                let mut dissat_set = Vec::new();
+                dissat_set.push(dissat_prob.and_then(|x| Some(x + w*sat_prob)));
+                dissat_set.push(dissat_prob);
+                dissat_set.push(Some(w * sat_prob));
+                dissat_set.push(None);
+                dissat_set
+            };
 
             let mut l_comp = vec![];
             let mut r_comp = vec![];
 
-            for dissat_prob in dissat_probs(rw).iter(){
-                let mut l = best_compilations(&subs[0].1, lw*sat_prob, *dissat_prob);
+            for dissat_prob in dissat_probs(rw).iter() {
+                let mut l = best_compilations(&subs[0].1, lw * sat_prob, *dissat_prob);
                 l_comp.push(l);
             }
 
-            for dissat_prob in dissat_probs(lw).iter(){
-                let mut r = best_compilations(&subs[1].1, rw*sat_prob, *dissat_prob);
+            for dissat_prob in dissat_probs(lw).iter() {
+                let mut r = best_compilations(&subs[1].1, rw * sat_prob, *dissat_prob);
                 r_comp.push(r);
             }
-            compile_or(&mut ret, &mut l_comp[0], &mut r_comp[0],[lw, rw], sat_prob, dissat_prob, Terminal::OrB);
-            compile_or(&mut ret, &mut r_comp[0], &mut l_comp[0],[rw, lw], sat_prob, dissat_prob, Terminal::OrB);
+            compile_or(
+                &mut ret,
+                &mut l_comp[0],
+                &mut r_comp[0],
+                [lw, rw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrB,
+            );
+            compile_or(
+                &mut ret,
+                &mut r_comp[0],
+                &mut l_comp[0],
+                [rw, lw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrB,
+            );
 
-            compile_or(&mut ret, &mut l_comp[0], &mut r_comp[2],[lw, rw], sat_prob, dissat_prob, Terminal::OrD);
-            compile_or(&mut ret, &mut r_comp[0], &mut l_comp[2],[rw, lw], sat_prob, dissat_prob, Terminal::OrD);
+            compile_or(
+                &mut ret,
+                &mut l_comp[0],
+                &mut r_comp[2],
+                [lw, rw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrD,
+            );
+            compile_or(
+                &mut ret,
+                &mut r_comp[0],
+                &mut l_comp[2],
+                [rw, lw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrD,
+            );
 
-            compile_or(&mut ret, &mut l_comp[1], &mut r_comp[3],[lw, rw], sat_prob, dissat_prob, Terminal::OrC);
-            compile_or(&mut ret, &mut r_comp[3], &mut l_comp[1],[rw, lw], sat_prob, dissat_prob, Terminal::OrC);
+            compile_or(
+                &mut ret,
+                &mut l_comp[1],
+                &mut r_comp[3],
+                [lw, rw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrC,
+            );
+            compile_or(
+                &mut ret,
+                &mut r_comp[3],
+                &mut l_comp[1],
+                [rw, lw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrC,
+            );
 
-            compile_or(&mut ret, &mut l_comp[2], &mut r_comp[3],[lw, rw], sat_prob, dissat_prob, Terminal::OrI);
-            compile_or(&mut ret, &mut r_comp[2], &mut l_comp[3],[rw, lw], sat_prob, dissat_prob, Terminal::OrI);
+            compile_or(
+                &mut ret,
+                &mut l_comp[2],
+                &mut r_comp[3],
+                [lw, rw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrI,
+            );
+            compile_or(
+                &mut ret,
+                &mut r_comp[2],
+                &mut l_comp[3],
+                [rw, lw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrI,
+            );
 
-            compile_or(&mut ret, &mut l_comp[3], &mut r_comp[2],[lw, rw], sat_prob, dissat_prob, Terminal::OrI);
-            compile_or(&mut ret, &mut r_comp[3], &mut l_comp[2],[rw, lw], sat_prob, dissat_prob, Terminal::OrI);
-        },
+            compile_or(
+                &mut ret,
+                &mut l_comp[3],
+                &mut r_comp[2],
+                [lw, rw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrI,
+            );
+            compile_or(
+                &mut ret,
+                &mut r_comp[3],
+                &mut l_comp[2],
+                [rw, lw],
+                sat_prob,
+                dissat_prob,
+                Terminal::OrI,
+            );
+        }
         Concrete::Threshold(k, ref subs) => {
             let n = subs.len();
             let k_over_n = k as f64 / n as f64;
@@ -794,7 +884,8 @@ fn best_compilations<Pk: MiniscriptKey>(
 
             for (i, ast) in subs.iter().enumerate() {
                 let sp = sat_prob * k_over_n;
-                let dp = dissat_prob.map(|p| p + sat_prob * (1.0 - k_over_n));
+                //Expressions must be dissatisfiable
+                let dp = Some(dissat_prob.unwrap_or(0 as f64) + (1.0 - k_over_n) * sat_prob);
                 let best_ext = if i == 0 {
                     best_e(ast, sp, dp)
                 } else {
@@ -864,20 +955,12 @@ fn compile_or<Pk, F>(
             let mut ast = or_type(Arc::clone(&lref), Arc::clone(&rref));
             l.comp_ext_data.branch_prob = Some(weights[0]);
             r.comp_ext_data.branch_prob = Some(weights[1]);
-            if let Ok(new_ext)
-            = AstElemExt::nonterminal(ast, l, r)
-            {
-                insert_best_wrapped(
-                    ret,
-                    new_ext,
-                    sat_prob,
-                    dissat_prob,
-                );
+            if let Ok(new_ext) = AstElemExt::nonterminal(ast, l, r) {
+                insert_best_wrapped(ret, new_ext, sat_prob, dissat_prob);
             }
         }
     }
 }
-
 
 fn best_t<Pk: MiniscriptKey>(
     policy: &Concrete<Pk>,
@@ -999,15 +1082,27 @@ mod tests {
     }
 
     #[test]
-    fn temp(){
-        let policy = SPolicy::from_str("thresh(2,pk(),pk(),pk(),after(100))")
-            .expect("parsing");
-//        let policy = SPolicy::from_str("or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)))")
-//            .expect("parsing");
-        let compilation = best_t(&policy, 1.0, None);
-        println!("{} ty {:?} ext {:?} cost {}",
-                 compilation.ms, compilation.ms.ty, compilation.ms.ext,
-                 compilation.comp_ext_data.cost_1d(compilation.ms.ext.pk_cost, 1.0, None));
+    fn compile_q_temp() {
+        let policy2 = DummyPolicy::from_str("thresh(2,or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk(),pk(),pk())")
+            .unwrap();
+        let policy = SPolicy::from_str(
+            "and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))",
+        )
+        .expect("parsing");
+        //        let policy = SPolicy::from_str("or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)))")
+        //            .expect("parsing");
+        let compilation = best_t(&policy2, 1.0, None);
+        //        println!("{:?} hashMap", compilation);
+        println!(
+            "{} ty {:?} ext {:?} cost {} {:x}",
+            compilation.ms,
+            compilation.ms.ty,
+            compilation.ms.ext,
+            compilation
+                .comp_ext_data
+                .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
+            compilation.ms.encode()
+        );
         dbg!(&compilation);
     }
 
@@ -1042,7 +1137,7 @@ mod tests {
             compilation
                 .comp_ext_data
                 .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
-            772.140625
+            770.171875
         );
         assert_eq!(
             policy.into_lift().sorted(),

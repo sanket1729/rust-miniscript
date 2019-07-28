@@ -177,7 +177,7 @@ impl Property for Correctness {
                 Base::B => Base::W,
                 x => return Err(ErrorKind::ChildBase1(x)),
             },
-            input: match self.input{
+            input: match self.input {
                 Input::One | Input::OneNonZero => Input::Any,
                 _ => return Err(ErrorKind::SwapNonOne),
             },

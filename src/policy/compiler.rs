@@ -340,7 +340,7 @@ impl CompilerExtData {
             + self.sat_cost * sat_prob
             + match (dissat_prob, self.dissat_cost) {
                 (Some(prob), Some(cost)) => prob * cost,
-                (Some(_), None) => 0.0,
+                (Some(_), None) => 10000.0,
                 (None, Some(_)) => 0.0,
                 (None, None) => 0.0,
             }

@@ -298,8 +298,31 @@ impl Property for CompilerExtData {
         })
     }
 
-    fn and_or(_a: Self, _b: Self, _c: Self) -> Result<Self, types::ErrorKind> {
-        unimplemented!("compiler doesn't support andor yet")
+    fn and_or(a: Self, b: Self, c: Self) -> Result<Self, types::ErrorKind> {
+        let aprob = a
+            .branch_prob
+            .expect("BUG: left branch prob must be set for disjunctions");
+        let bprob = b
+            .branch_prob
+            .expect("BUG: right branch prob must be set for disjunctions");
+        let cprob = c
+            .branch_prob
+            .expect("BUG: right branch prob must be set for disjunctions");
+        let adis = a
+            .dissat_cost
+            .expect("BUG: and_or first arg(a) must be dissatisfiable");
+        debug_assert_eq!(aprob, bprob);//A and B must have same branch prob.
+        Ok(CompilerExtData {
+            branch_prob: None,
+            sat_cost: aprob * (a.sat_cost + b.sat_cost) + cprob * (adis + c.sat_cost),
+            dissat_cost: if let  Some(bdis) = b.dissat_cost {
+                Some(adis + bdis)
+            } else if let Some(cdis) = c.dissat_cost {
+                Some(adis + cdis)
+            } else {
+                None
+            },
+        })
     }
 
     fn threshold<S>(k: usize, n: usize, mut sub_ck: S) -> Result<Self, types::ErrorKind>
@@ -340,7 +363,7 @@ impl CompilerExtData {
             + self.sat_cost * sat_prob
             + match (dissat_prob, self.dissat_cost) {
                 (Some(prob), Some(cost)) => prob * cost,
-                (Some(_), None) => 10000.0,
+                (Some(_), None) => 0.0,
                 (None, Some(_)) => 0.0,
                 (None, None) => 0.0,
             }
@@ -355,7 +378,7 @@ impl<Pk: MiniscriptKey> AstElemExt<Pk> where {
         }
     }
 
-    fn nonterminal(
+    fn binary(
         ast: Terminal<Pk>,
         l: &AstElemExt<Pk>,
         r: &AstElemExt<Pk>,
@@ -363,6 +386,33 @@ impl<Pk: MiniscriptKey> AstElemExt<Pk> where {
         let lookup_ext = |n| match n {
             0 => Some(l.comp_ext_data),
             1 => Some(r.comp_ext_data),
+            _ => unreachable!(),
+        };
+        //Types and ExtData are already cached and stored in children. So, we can
+        //type_check without cache. For Compiler extra data, we supply a cache.
+        let ty = types::Type::type_check(&ast, |_| None)?;
+        let ext = types::ExtData::type_check(&ast, |_| None)?;
+        let comp_ext_data = CompilerExtData::type_check(&ast, lookup_ext)?;
+        Ok(AstElemExt {
+            ms: Arc::new(Miniscript {
+                ty: ty,
+                ext: ext,
+                node: ast,
+            }),
+            comp_ext_data: comp_ext_data,
+        })
+    }
+
+    fn ternary(
+        ast: Terminal<Pk>,
+        a: &AstElemExt<Pk>,
+        b: &AstElemExt<Pk>,
+        c: &AstElemExt<Pk>,
+    ) -> Result<AstElemExt<Pk>, types::Error<Pk>> {
+        let lookup_ext = |n| match n {
+            0 => Some(a.comp_ext_data),
+            1 => Some(b.comp_ext_data),
+            2 => Some(c.comp_ext_data),
             _ => unreachable!(),
         };
         //Types and ExtData are already cached and stored in children. So, we can
@@ -697,9 +747,6 @@ fn best_compilations<Pk: MiniscriptKey>(
         ),
         Concrete::And(ref subs) => {
             assert_eq!(subs.len(), 2, "and takes 2 args");
-            dbg!(&policy);
-            dbg!(sat_prob);
-            dbg!(dissat_prob);
             let left = best_compilations(&subs[0], sat_prob, dissat_prob);
             let right = best_compilations(&subs[1], sat_prob, dissat_prob);
             for l in left.values() {
@@ -739,12 +786,12 @@ fn best_compilations<Pk: MiniscriptKey>(
                             ast: opt.take().unwrap(),
                         };
                         let ast = c.ast.clone();
-                        if let Ok(new_ext) = AstElemExt::nonterminal(ast, c.left, c.right) {
+                        if let Ok(new_ext) = AstElemExt::binary(ast, c.left, c.right) {
                             insert_best_wrapped(&mut ret, new_ext, sat_prob, dissat_prob);
                         }
 
                         let c = c.swap();
-                        if let Ok(new_ext) = AstElemExt::nonterminal(c.ast, c.left, c.right) {
+                        if let Ok(new_ext) = AstElemExt::binary(c.ast, c.left, c.right) {
                             insert_best_wrapped(&mut ret, new_ext, sat_prob, dissat_prob);
                         }
                     }
@@ -759,6 +806,19 @@ fn best_compilations<Pk: MiniscriptKey>(
             //The different q values (dissatisfaction probabilities)
             // for each compilation.
             //p always stays the same
+
+            //and-or
+            match (&subs[0].1, &subs[1].1) {
+                (&Concrete::And(ref x), _) if x.len() == 2 => {
+
+                    let mut a = best_compilations(&x[0], lw * sat_prob, dissat_prob);
+                    let mut b = best_compilations(&x[1], lw * sat_prob, dissat_prob);
+                    let mut c = best_compilations(&subs[1].1, lw * sat_prob, dissat_prob);
+
+                },
+                (_, &Concrete::And(ref x)) => {},
+                _ => {},
+            };
             let dissat_probs = |w: f64| -> Vec<Option<f64>> {
                 let mut dissat_set = Vec::new();
                 dissat_set.push(dissat_prob.and_then(|x| Some(x + w*sat_prob)));
@@ -935,7 +995,7 @@ pub fn best_compilation<Pk: MiniscriptKey>(policy: &Concrete<Pk>) -> Miniscript<
 }
 /// Helper function to compile different types of or fragments.
 /// `sat_prob` and `dissat_prob` represent the sat and dissat probabilities of
-/// each sub branch. `weights` represent the odds for taking each sub branch
+/// root or. `weights` represent the odds for taking each sub branch
 fn compile_or<Pk, F>(
     ret: &mut HashMap<types::Type, AstElemExt<Pk>>,
     left_comp: &mut HashMap<types::Type, AstElemExt<Pk>>,
@@ -955,19 +1015,47 @@ fn compile_or<Pk, F>(
             let mut ast = or_type(Arc::clone(&lref), Arc::clone(&rref));
             l.comp_ext_data.branch_prob = Some(weights[0]);
             r.comp_ext_data.branch_prob = Some(weights[1]);
-            if let Ok(new_ext) = AstElemExt::nonterminal(ast, l, r) {
+            if let Ok(new_ext) = AstElemExt::binary(ast, l, r) {
                 insert_best_wrapped(ret, new_ext, sat_prob, dissat_prob);
             }
         }
     }
 }
 
-fn best_t<Pk: MiniscriptKey>(
-    policy: &Concrete<Pk>,
+/// Helper function to compile different order of and_or fragments.
+/// `sat_prob` and `dissat_prob` represent the sat and dissat probabilities of
+/// root and_or node. `weights` represent the odds for taking each sub branch
+fn compile_and_or<Pk: MiniscriptKey>(
+    ret: &mut HashMap<types::Type, AstElemExt<Pk>>,
+    a_comp: &mut HashMap<types::Type, AstElemExt<Pk>>,
+    b_comp: &mut HashMap<types::Type, AstElemExt<Pk>>,
+    c_comp: &mut HashMap<types::Type, AstElemExt<Pk>>,
+    weights: [f64; 2],
     sat_prob: f64,
     dissat_prob: Option<f64>,
-) -> AstElemExt<Pk> {
-    best_compilations(policy, 1.0, None)
+)
+{
+    for a in a_comp.values_mut() {
+        let aref = Arc::clone(&a.ms);
+        for b in b_comp.values_mut() {
+            let bref = Arc::clone(&b.ms);
+            for c in c_comp.values_mut() {
+                let cref = Arc::clone(&c.ms);
+                let mut ast = Terminal::AndOr(Arc::clone(&aref), Arc::clone(&bref), Arc::clone(&cref));
+                a.comp_ext_data.branch_prob = Some(weights[0]);
+                b.comp_ext_data.branch_prob = Some(weights[0]);
+                c.comp_ext_data.branch_prob = Some(weights[1]);
+                if let Ok(new_ext) = AstElemExt::ternary(ast, a, b, c) {
+                    insert_best_wrapped(ret, new_ext, sat_prob, dissat_prob);
+                }
+            }
+        }
+    }
+}
+
+fn best_t<Pk: MiniscriptKey>(policy: &Concrete<Pk>, sat_prob: f64, dissat_prob: Option<f64>) -> AstElemExt<Pk>
+{
+    best_compilations(policy, sat_prob, dissat_prob)
         .into_iter()
         .filter(|&(key, _)| key.corr.base == types::Base::B)
         .map(|(_, val)| val)

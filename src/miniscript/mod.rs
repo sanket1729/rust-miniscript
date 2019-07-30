@@ -46,10 +46,11 @@ use std::sync::Arc;
 use MiniscriptKey;
 use {expression, ToHash160};
 use {Error, ToPublicKey};
+use std::cmp;
 
 /// Top-level script AST type
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Miniscript<Pk: MiniscriptKey> {
+#[derive(Clone, Hash)]
+pub struct Miniscript<Pk: MiniscriptKey>{
     ///A node in the Abstract Syntax Tree(
     pub node: decode::Terminal<Pk>,
     ///The correctness and malleability type information for the AST node
@@ -58,7 +59,45 @@ pub struct Miniscript<Pk: MiniscriptKey> {
     pub ext: types::extra_props::ExtData,
 }
 
-impl<Pk: MiniscriptKey> fmt::Debug for Miniscript<Pk> {
+/// `PartialOrd` of `Miniscript` must depend only on node and not the type information.
+/// The type information and extra_properties can be deterministically determined
+/// by the ast tree.
+impl<Pk: MiniscriptKey> PartialOrd for Miniscript<Pk>{
+
+    fn partial_cmp(&self, other: &Miniscript<Pk>) -> Option<cmp::Ordering> {
+        Some(self.node.cmp(&other.node))
+    }
+}
+
+/// `Ord` of `Miniscript` must depend only on node and not the type information.
+/// The type information and extra_properties can be deterministically determined
+/// by the ast tree.
+impl<Pk: MiniscriptKey> Ord for Miniscript<Pk>{
+
+    fn cmp(&self, other: &Miniscript<Pk>) -> cmp::Ordering {
+        self.node.cmp(&other.node)
+    }
+}
+
+/// `PartialEq` of `Miniscript` must depend only on node and not the type information.
+/// The type information and extra_properties can be deterministically determined
+/// by the ast tree.
+impl<Pk: MiniscriptKey> PartialEq for Miniscript<Pk>{
+
+    fn eq(&self, other: &Miniscript<Pk>) -> bool {
+        self.node.eq(&other.node)
+    }
+}
+
+/// `Eq` of `Miniscript` must depend only on node and not the type information.
+/// The type information and extra_properties can be deterministically determined
+/// by the ast tree.
+impl<Pk: MiniscriptKey> Eq for Miniscript<Pk>{
+}
+
+
+impl<Pk: MiniscriptKey> fmt::Debug for Miniscript<Pk>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}",
                self.node,)

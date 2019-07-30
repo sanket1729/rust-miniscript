@@ -7,7 +7,7 @@ use MiniscriptKey;
 use Terminal;
 
 /// Whether a fragment is OK to be used in non-segwit scripts
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum LegacySafe {
     /// The fragment can be used in pre-segwit contexts without concern
     /// about malleability attacks/unbounded 3rd-party fee stuffing. This
@@ -23,8 +23,8 @@ pub enum LegacySafe {
 /// relevant to legacy(pre-segwit) safety and fee estimation. If a fragment is
 /// used in pre-segwit transactions it will only be malleable but still is
 /// correct and sound.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct ExtData {
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub struct ExtData{
     ///enum sorting whether the fragment is safe to be in used in pre-segwit context
     pub legacy_safe: LegacySafe,
     /// The number of bytes needed to encode its scriptpubkey

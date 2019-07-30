@@ -31,7 +31,7 @@ fn return_none<T>(_: usize) -> Option<T> {
 }
 
 /// Detailed type of a typechecker error
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum ErrorKind {
     /// Relative or absolute timelock had a time value of 0
     ZeroTime,
@@ -81,7 +81,7 @@ pub enum ErrorKind {
     ThresholdNotStrong { k: usize, n: usize, n_strong: usize },
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Error<Pk: MiniscriptKey> {
     /// The fragment that failed typecheck
     pub fragment: Terminal<Pk>,
@@ -205,7 +205,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Error<Pk> {
 
 /// Structure representing the type of a Miniscript fragment, including all
 /// properties relevant to the main codebase
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Type {
     /// Correctness/soundness properties
     pub corr: Correctness,

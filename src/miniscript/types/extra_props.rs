@@ -241,7 +241,7 @@ impl Property for ExtData {
         Ok(ExtData {
             legacy_safe: LegacySafe::SegwitOnly,
             pk_cost: l.pk_cost + r.pk_cost + 3,
-            has_verify_form: l.has_verify_form && r.has_verify_form,
+            has_verify_form: false,
         })
     }
 
@@ -257,7 +257,7 @@ impl Property for ExtData {
         Ok(ExtData {
             legacy_safe: legacy_safe2(l.legacy_safe, r.legacy_safe),
             pk_cost: l.pk_cost + r.pk_cost + 3,
-            has_verify_form: l.has_verify_form && r.has_verify_form,
+            has_verify_form: false,
         })
     }
 
@@ -265,7 +265,7 @@ impl Property for ExtData {
         Ok(ExtData {
             legacy_safe: legacy_safe2(legacy_safe2(a.legacy_safe, b.legacy_safe), c.legacy_safe),
             pk_cost: a.pk_cost + b.pk_cost + c.pk_cost + 3,
-            has_verify_form: b.has_verify_form && c.has_verify_form,
+            has_verify_form: false,
         })
     }
 

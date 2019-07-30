@@ -31,7 +31,7 @@ use {Error, MiniscriptKey};
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
 /// to assist the compiler
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Policy<Pk: MiniscriptKey> {
     /// A public key which must sign to satisfy the descriptor
     Key(Pk),

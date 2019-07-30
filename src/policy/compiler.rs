@@ -26,6 +26,8 @@ use std::sync::Arc;
 use Terminal;
 use {Miniscript, MiniscriptKey};
 use std::hash;
+use std::rc::Rc;
+use bitcoin_hashes::{sha256, sha256d, ripemd160, hash160};
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
 struct OrdF64(f64);
@@ -614,17 +616,15 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
 
                 let better_type = self.visited_types
                     .iter()
-                    .map(|(ty, ty_cost)| *ty >= ms_type && *ty_cost < cost)
+                    .map(|(ty, ty_cost)| ty.is_supertype(ms_type)  && *ty_cost <= cost)
                     .fold(false, |acc, x| acc || x);
 
-                dbg!(&self.visited_types);
                 if better_type{
                     continue;
                 }else{
                     self.visited_types.retain(
-                        |&ty, &mut ty_cost| !(ty <= ms_type && ty_cost>= cost) );
+                        |&ty, &mut ty_cost| !(ms_type.is_supertype(ty) && ty_cost>= cost) );
                     self.visited_types.insert(ms_type, cost);
-
                     let new_ext = AstElemExt {
                         ms: Arc::new(Miniscript {
                             node: (all_casts[i].node)(Arc::clone(&current.ms)),
@@ -643,13 +643,14 @@ impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
             Some((_, astelem)) => Some(astelem),
             None => self.origin.take(),
         };
-        match ret {
-            None => return None,
-            Some(ref r) if r.comp_ext_data.dissat_cost.is_none() && self.dissat_prob.is_some() => {
-                return self.next()
-            }
-            _ => ret,
-        }
+        ret
+//        match ret {
+//            None => return None,
+//            Some(ref r) if r.comp_ext_data.dissat_cost.is_none() && self.dissat_prob.is_some() => {
+//                return self.next()
+//            }
+//            _ => ret,
+//        }
     }
 }
 
@@ -705,7 +706,6 @@ where
     let ord_dissat_prob = dissat_prob.and_then(|x|Some(OrdF64(x)));
     if let Some(ret) =  policy_cache.get(
         &(policy.clone(), ord_sat_prob, ord_dissat_prob)) {
-        dbg!("hit!");
         return ret.clone();
     }
     let mut ret = HashMap::new();
@@ -833,31 +833,31 @@ where
             //p always stays the same
 
             //and-or
-//                if let (&Concrete::And(ref x), _) = (&subs[0].1, &subs[1].1){
-//
-//                    let mut a1 = best_compilations(policy_cache, &x[0], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
-//                    let mut a2 = best_compilations(policy_cache, &x[0], lw * sat_prob, None);
-//
-//                    let mut b1 = best_compilations(policy_cache, &x[1], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
-//                    let mut b2 = best_compilations(policy_cache, &x[1], lw * sat_prob, None);
-//
-//                    let mut c = best_compilations(policy_cache, &subs[1].1, rw * sat_prob, dissat_prob);
-//
-//                    compile_and_or(&mut ret, &mut a1, &mut b2, &mut c, [lw, rw], sat_prob, dissat_prob);
-//                    compile_and_or(&mut ret, &mut b1, &mut a2, &mut c, [lw, rw], sat_prob, dissat_prob);
-//                };
-//                if let (_, &Concrete::And(ref x)) = (&subs[0].1, &subs[1].1) {
-//                    let mut a1 = best_compilations(policy_cache, &x[0], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
-//                    let mut a2 = best_compilations(policy_cache, &x[0], lw * sat_prob, None);
-//
-//                    let mut b1 = best_compilations(policy_cache, &x[1], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
-//                    let mut b2 = best_compilations(policy_cache, &x[1], lw * sat_prob, None);
-//
-//                    let mut c = best_compilations(policy_cache, &subs[0].1, rw * sat_prob, dissat_prob);
-//
-//                    compile_and_or(&mut ret, &mut a1, &mut b2, &mut c, [lw, rw], sat_prob, dissat_prob);
-//                    compile_and_or(&mut ret, &mut b1, &mut a2, &mut c, [lw, rw], sat_prob, dissat_prob);
-//                };
+                if let (&Concrete::And(ref x), _) = (&subs[0].1, &subs[1].1){
+
+                    let mut a1 = best_compilations(policy_cache, &x[0], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
+                    let mut a2 = best_compilations(policy_cache, &x[0], lw * sat_prob, None);
+
+                    let mut b1 = best_compilations(policy_cache, &x[1], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
+                    let mut b2 = best_compilations(policy_cache, &x[1], lw * sat_prob, None);
+
+                    let mut c = best_compilations(policy_cache, &subs[1].1, rw * sat_prob, dissat_prob);
+
+                    compile_and_or(&mut ret, &mut a1, &mut b2, &mut c, [lw, rw], sat_prob, dissat_prob);
+                    compile_and_or(&mut ret, &mut b1, &mut a2, &mut c, [lw, rw], sat_prob, dissat_prob);
+                };
+                if let (_, &Concrete::And(ref x)) = (&subs[0].1, &subs[1].1) {
+                    let mut a1 = best_compilations(policy_cache, &x[0], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
+                    let mut a2 = best_compilations(policy_cache, &x[0], lw * sat_prob, None);
+
+                    let mut b1 = best_compilations(policy_cache, &x[1], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
+                    let mut b2 = best_compilations(policy_cache, &x[1], lw * sat_prob, None);
+
+                    let mut c = best_compilations(policy_cache, &subs[0].1, rw * sat_prob, dissat_prob);
+
+                    compile_and_or(&mut ret, &mut a1, &mut b2, &mut c, [lw, rw], sat_prob, dissat_prob);
+                    compile_and_or(&mut ret, &mut b1, &mut a2, &mut c, [lw, rw], sat_prob, dissat_prob);
+                };
 
             let dissat_probs = |w: f64| -> Vec<Option<f64>> {
                 let mut dissat_set = Vec::new();
@@ -1012,8 +1012,6 @@ where
                     sub_ext_data.push(best_ws[i].1);
                 }
             }
-            dbg!(&sub_ast[0]);
-            dbg!(&sub_ext_data[0]);
             let ast = Terminal::Thresh(k, sub_ast);
             let ast_ext = AstElemExt {
                 ms: Arc::new(
@@ -1227,7 +1225,7 @@ mod tests {
         (ret, sig)
     }
 
-//    #[test]
+    #[test]
     fn compile_basic() {
         let policy = DummyPolicy::from_str("pk()").expect("parse");
         let miniscript = policy.compile();
@@ -1240,7 +1238,7 @@ mod tests {
         assert_eq!(miniscript.into_lift(), Semantic::KeyHash(DummyKeyHash));
     }
 
-//    #[test]
+    #[test]
     fn compile_q_temp() {
         let policy2 = DummyPolicy::from_str("thresh(2,or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk(),pk(),pk())")
             .unwrap();
@@ -1283,7 +1281,10 @@ mod tests {
                 let policy = DummyPolicy::from_str(
                     "and(and(and(or(127@thresh(2,pk(),pk(),thresh(2,or(127@pk(),1@pk()),after(100),or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk())),1@pk()),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)),or(127@pk(),1@after(300))),or(127@after(400),pk()))"
                 ).expect("parsing");
-                let compilation = best_t(&mut HashMap::new(), &policy, 1.0, None);
+        let compilation = best_t(&mut HashMap::new(), &policy, 1.0, None);;
+        for _ in 0..50 {
+            best_t(&mut HashMap::new(), &policy, 1.0, None);
+        }
                 dbg!(&policy);
         println!(
             "{} ty {:?} ext {:?} cost {}",

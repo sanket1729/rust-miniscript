@@ -100,12 +100,11 @@ impl Correctness{
     /// in the given `Type`. This returns `true` on same arguments
     /// `a.is_supertype(a)` is `true`.
     pub fn is_supertype(&self, other: Self) -> bool{
-
-        if self.base != other.base ||
-        !self.input.is_supertype(other.input) ||
-        !self.dissatisfiable >= other.dissatisfiable ||
-        !self.unit >= other.unit{
-            return false;
+        if self.base == other.base &&
+        self.input.is_supertype(other.input) &&
+        self.dissatisfiable >= other.dissatisfiable &&
+        self.unit >= other.unit{
+            return true;
         }
         return false;
     }

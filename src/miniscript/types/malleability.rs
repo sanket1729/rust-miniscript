@@ -61,12 +61,12 @@ impl Malleability{
     /// `a.is_supertype(a)` is `true`.
     pub fn is_supertype(&self, other: Self) -> bool{
 
-        if self.dissat != other.dissat ||
-            !self.safe >= other.safe ||
-            !self.non_malleable >= other.non_malleable{
-            return false;
+        if self.dissat == other.dissat &&
+            self.safe >= other.safe &&
+            self.non_malleable >= other.non_malleable{
+            return true;
         }
-        return true;
+        return false;
     }
 }
 

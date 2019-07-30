@@ -213,6 +213,21 @@ pub struct Type {
     pub mall: Malleability,
 }
 
+impl Type{
+
+    /// Check whether the `self` is a supertype of `other` argument .
+    /// This checks whether the argument `other` has attributes which are present
+    /// in the given `Type`. This returns `true` on same arguments
+    /// `a.is_supertype(a)` is `true`.
+    pub fn is_supertype(&self, other: Self) -> bool{
+
+        if self.corr.is_supertype(other.corr)
+            && self.mall.is_supertype(other.mall){
+            return true;
+        }
+        return false;
+    }
+}
 /// Trait representing a type property, which defines how the property
 /// propagates from terminals to the root of a Miniscript
 pub trait Property: Sized {

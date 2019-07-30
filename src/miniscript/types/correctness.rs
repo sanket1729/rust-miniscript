@@ -57,6 +57,21 @@ pub enum Input {
     AnyNonZero,
 }
 
+impl Input{
+
+    /// Check whether given `Input` is a supertype of `other`. That is,
+    /// if some Input is `OneNonZero` then it must be `One`, hence `OneNonZero` is
+    /// a supertype if `One`. Returns `true` for `a.is_supertype(a)`.
+    fn is_supertype(&self, other: Self) -> bool {
+        match (*self, other){
+            (x, y) if x == y => true,
+            (Input::OneNonZero, Input::One) |
+            (Input::AnyNonZero, Input::Any) => true,
+            _ => false,
+        }
+    }
+}
+
 /// Structure representing the type properties of a fragment which are
 /// relevant to completeness (are all expected branches actually accessible,
 /// given some valid witness) and soundness (is it possible to satisfy the
@@ -76,6 +91,24 @@ pub struct Correctness {
     /// Whether the fragment's "nonzero" output on satisfaction is
     /// always the constant 1.
     pub unit: bool,
+}
+
+impl Correctness{
+
+    /// Check whether the `self` is a supertype of `other` argument .
+    /// This checks whether the argument `other` has attributes which are present
+    /// in the given `Type`. This returns `true` on same arguments
+    /// `a.is_supertype(a)` is `true`.
+    pub fn is_supertype(&self, other: Self) -> bool{
+
+        if self.base != other.base ||
+        !self.input.is_supertype(other.input) ||
+        !self.dissatisfiable >= other.dissatisfiable ||
+        !self.unit >= other.unit{
+            return false;
+        }
+        return false;
+    }
 }
 
 impl Property for Correctness {

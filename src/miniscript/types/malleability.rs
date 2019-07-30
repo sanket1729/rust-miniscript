@@ -53,6 +53,23 @@ pub struct Malleability {
     pub non_malleable: bool,
 }
 
+impl Malleability{
+
+    /// Check whether the `self` is a supertype of `other` argument .
+    /// This checks whether the argument `other` has attributes which are present
+    /// in the given `Type`. This returns `true` on same arguments
+    /// `a.is_supertype(a)` is `true`.
+    pub fn is_supertype(&self, other: Self) -> bool{
+
+        if self.dissat != other.dissat ||
+            !self.safe >= other.safe ||
+            !self.non_malleable >= other.non_malleable{
+            return false;
+        }
+        return true;
+    }
+}
+
 impl Property for Malleability {
     fn from_true() -> Self {
         Malleability {

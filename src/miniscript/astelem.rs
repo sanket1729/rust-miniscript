@@ -253,7 +253,7 @@ impl<Pk: MiniscriptKey> fmt::Display for Terminal<Pk> {
             Terminal::False => f.write_str("0"),
             Terminal::AndV(ref l, ref r) => write!(f, "and_v({},{})", l, r),
             Terminal::AndB(ref l, ref r) => write!(f, "and_b({},{})", l, r),
-            Terminal::AndOr(ref a, ref b, ref c) => write!(f, "tern({},{},{})", a, c, b),
+            Terminal::AndOr(ref a, ref b, ref c) => write!(f, "and_or({},{},{})", a, b, c),
             Terminal::OrB(ref l, ref r) => write!(f, "or_b({},{})", l, r),
             Terminal::OrD(ref l, ref r) => write!(f, "or_d({},{})", l, r),
             Terminal::OrC(ref l, ref r) => write!(f, "or_c({},{})", l, r),

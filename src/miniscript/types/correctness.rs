@@ -66,7 +66,8 @@ impl Input{
         match (*self, other){
             (x, y) if x == y => true,
             (Input::OneNonZero, Input::One) |
-            (Input::AnyNonZero, Input::Any) => true,
+            (Input::OneNonZero, Input::AnyNonZero) |
+            (_, Input::Any) => true,
             _ => false,
         }
     }

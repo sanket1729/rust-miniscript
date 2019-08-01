@@ -37,6 +37,19 @@ pub enum Dissat {
     Unknown,
 }
 
+impl Dissat{
+
+    /// Check whether given `Dissat` is a supertype of `other`. That is,
+    /// if some Dissat is `Unique` then it must be `Unknown`.
+    fn is_supertype(&self, other: Self) -> bool {
+        match (*self, other){
+            (x, y) if x == y => true,
+            (_, Dissat::Unknown) => true,
+            _ => false,
+        }
+    }
+}
+
 /// Structure representing the type properties of a fragment which have
 /// relevance to malleability analysis
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
@@ -61,7 +74,7 @@ impl Malleability{
     /// `a.is_supertype(a)` is `true`.
     pub fn is_supertype(&self, other: Self) -> bool{
 
-        if self.dissat == other.dissat &&
+        if self.dissat.is_supertype(other.dissat) &&
             self.safe >= other.safe &&
             self.non_malleable >= other.non_malleable{
             return true;

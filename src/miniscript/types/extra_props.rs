@@ -24,7 +24,7 @@ pub enum LegacySafe {
 /// used in pre-segwit transactions it will only be malleable but still is
 /// correct and sound.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
-pub struct ExtData{
+pub struct ExtData {
     ///enum sorting whether the fragment is safe to be in used in pre-segwit context
     pub legacy_safe: LegacySafe,
     /// The number of bytes needed to encode its scriptpubkey
@@ -273,7 +273,7 @@ impl Property for ExtData {
     where
         S: FnMut(usize) -> Result<Self, ErrorKind>,
     {
-        let mut pk_cost = 1 + script_num_size(k);//Equal and k
+        let mut pk_cost = 1 + script_num_size(k); //Equal and k
         let mut legacy_safe = LegacySafe::LegacySafe;
         for i in 0..n {
             let sub = sub_ck(i)?;
@@ -282,7 +282,7 @@ impl Property for ExtData {
         }
         Ok(ExtData {
             legacy_safe: legacy_safe,
-            pk_cost: pk_cost + n - 1,//all pk cost + (n-1)*ADD
+            pk_cost: pk_cost + n - 1, //all pk cost + (n-1)*ADD
             has_verify_form: true,
         })
     }

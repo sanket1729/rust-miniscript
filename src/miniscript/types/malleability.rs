@@ -37,12 +37,11 @@ pub enum Dissat {
     Unknown,
 }
 
-impl Dissat{
-
+impl Dissat {
     /// Check whether given `Dissat` is a supertype of `other`. That is,
     /// if some Dissat is `Unique` then it must be `Unknown`.
     fn is_supertype(&self, other: Self) -> bool {
-        match (*self, other){
+        match (*self, other) {
             (x, y) if x == y => true,
             (_, Dissat::Unknown) => true,
             _ => false,
@@ -66,17 +65,16 @@ pub struct Malleability {
     pub non_malleable: bool,
 }
 
-impl Malleability{
-
+impl Malleability {
     /// Check whether the `self` is a supertype of `other` argument .
     /// This checks whether the argument `other` has attributes which are present
     /// in the given `Type`. This returns `true` on same arguments
     /// `a.is_supertype(a)` is `true`.
-    pub fn is_supertype(&self, other: Self) -> bool{
-
-        if self.dissat.is_supertype(other.dissat) &&
-            self.safe >= other.safe &&
-            self.non_malleable >= other.non_malleable{
+    pub fn is_supertype(&self, other: Self) -> bool {
+        if self.dissat.is_supertype(other.dissat)
+            && self.safe >= other.safe
+            && self.non_malleable >= other.non_malleable
+        {
             return true;
         }
         return false;

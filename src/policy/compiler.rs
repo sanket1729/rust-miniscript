@@ -20,7 +20,7 @@
 use std::collections::{hash_map, HashMap, HashSet};
 use std::{cmp, f64};
 
-use miniscript::types::{self, ErrorKind, Property, Base};
+use miniscript::types::{self, ErrorKind, Property, Base, Type, ExtData};
 use policy::Concrete;
 use std::sync::Arc;
 use Terminal;
@@ -44,6 +44,29 @@ impl Ord for OrdF64 {
 impl hash::Hash for OrdF64{
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
         self.0.to_bits().hash(state);
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+struct CompilationKey{
+
+    ty: Type,
+
+    expensive_verify: bool,
+}
+
+impl CompilationKey{
+
+    fn is_supertype(self, other: Self) -> bool{
+        return self.ty.is_supertype(other.ty) &&
+            self.expensive_verify == other.expensive_verify
+    }
+
+    fn from_type(ty: Type, expensive_verify: bool) -> CompilationKey{
+        CompilationKey{
+            ty: ty,
+            expensive_verify: expensive_verify,
+        }
     }
 }
 
@@ -580,137 +603,49 @@ impl<Pk: MiniscriptKey> WrappingIter<Pk> {
         }
     }
 }
-//
-//impl<Pk: MiniscriptKey> Iterator for WrappingIter<Pk> {
-//    type Item = AstElemExt<Pk>;
-//
-//    fn next(&mut self) -> Option<AstElemExt<Pk>> {
-//        let current = match self.cast_stack.pop_front() {
-//            Some(ref astext) => astext.clone(),
-//            None => return None,
-//            };
-//
-//        // Try applying a new cast
-//        for i in 0..self.all_casts.len() {
-//            if let Ok(ms_type) = (self.all_casts[i].ast_type)(current.ms.ty) {
-//                if !ms_type.mall.non_malleable {
-//                    continue;
-//                }
-//
-//                let comp_ext_data = (self.all_casts[i].comp_ext_data)(current.comp_ext_data)
-//                    .expect("if AST typeck passes then compiler ext typeck must");
-//
-//                let ms_ext_data = (self.all_casts[i].ext_data)(current.ms.ext)
-//                    .expect("if AST typeck passes then ext typeck must");
-//
-//                //                let mut wrap_dissat_prob = self.dissat_prob;
-//                //                if let (Some(_), None) = (self.dissat_prob, comp_ext_data.dissat_cost){
-//                //                    wrap_dissat_prob = None;
-//                //                };
-//
-//                //                println!("{:?} {:?} {:?} {} {} {:?}", current, ms_type, comp_ext_data, i, p_sat, p_dissat);
-//                let cost =
-//                    comp_ext_data.cost_1d(ms_ext_data.pk_cost, self.sat_prob, self.dissat_prob);
-//
-//                let better_type = self.visited_types
-//                    .iter()
-//                    .map(|(ty, _)| {
-//                        ty.is_supertype(ms_type)  && *ty_cost <= cost
-//                    })
-//                    .fold(false, |acc, x| acc || x);
-//
-//                if better_type{
-//                    continue;
-//                }else{
-//                    self.visited_types.retain(
-//                        |&ty, &mut ty_cost| !(ms_type.is_supertype(ty) && ty_cost>= cost) );
-//                    self.visited_types.insert(ms_type, cost);
-//                    let new_ext = AstElemExt {
-//                        ms: Arc::new(Miniscript {
-//                            node: (self.all_casts[i].node)(Arc::clone(&current.ms)),
-//                            ty: ms_type,
-//                            ext: ms_ext_data,
-//                        }),
-//                        comp_ext_data: comp_ext_data,
-//                    };
-////                    self.cast_stack.last_mut()
-////                        .and_then(| (j, ast)| Some((i, ast)));
-//                    self.cast_stack.push_back(new_ext);
-//                }
-//            }
-//        }
-//        Some(current)
-////        match ret {
-////            None => return None,
-////            Some(ref r) if r.comp_ext_data.dissat_cost.is_none() && self.dissat_prob.is_some() => {
-////                return self.next()
-////            }
-////            _ => ret,
-////        }
-//    }
-//}
-
-//fn insert_best<Pk: MiniscriptKey>(
-//    map: &mut HashMap<types::Type, AstElemExt<Pk>>,
-//    elem: AstElemExt<Pk>,
-//    sat_prob: f64,
-//    dissat_prob: Option<f64>,
-//) {
-//    let cost = elem.comp_ext_data.cost_1d(elem.ms.ext.pk_cost, sat_prob, dissat_prob);
-//
-//    let better_type = map
-//        .iter()
-//        .map(|(ty, ty_cost)|
-//            ty.is_supertype(elem.ms.ty)
-//                && ty_cost.comp_ext_data.cost_1d(ty_cost.ms.ext.pk_cost, sat_prob, dissat_prob ) <= cost)
-//        .fold(false, |acc, x| acc || x);
-//
-//    if !better_type{
-//        map.retain(
-//            |&ty, &mut ty_cost| !
-//                (elem.ms.ty.is_supertype(ty) && ty_cost>= cost) );
-//    }
-//    match map.entry(elem.ms.ty) {
-//        hash_map::Entry::Vacant(x) => {
-//            x.insert(elem);
-//        }
-//        hash_map::Entry::Occupied(mut x) => {
-//            let existing = x.get_mut();
-//            if elem
-//                .comp_ext_data
-//                .cost_1d(elem.ms.ext.pk_cost, sat_prob, dissat_prob)
-//                < existing
-//                    .comp_ext_data
-//                    .cost_1d(existing.ms.ext.pk_cost, sat_prob, dissat_prob)
-//            {
-//                *existing = elem;
-//            }
-//        }
-//    }
-//}
 
 fn insert_best_wrapped_helper<Pk: MiniscriptKey>(
-    map: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
+    map: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
     data: AstElemExt<Pk>,
     sat_prob: f64,
     dissat_prob: Option<f64>,
 ) {
 
     let mut cast_stack: VecDeque<AstElemExt<Pk>> = VecDeque::new();
-    cast_stack.push_back(data.clone());
 
     let cost =
         data.comp_ext_data.cost_1d(data.ms.ext.pk_cost, sat_prob, dissat_prob);
 
-    map.insert(data.ms.ty, (data.clone(), cost));
+    let current_key = CompilationKey::from_type(data.ms.ty, data.ms.ext.has_verify_form);
 
+    let better_type = map
+        .iter()
+        .map(|(key, elem) | {
+            let elem_cost = elem.comp_ext_data.cost_1d(elem.ms.ext.pk_cost, sat_prob, dissat_prob);
+            key.is_supertype(current_key) && elem_cost <= cost
+        })
+        .fold(false, |acc, x| acc || x);
+
+    if !better_type {
+//        map.retain(
+//            |&key, elem| {
+//                let elem_cost = elem.comp_ext_data.cost_1d(elem.ms.ext.pk_cost, sat_prob, dissat_prob);
+//                !(current_key.is_supertype(key) && elem_cost >= cost)
+//            });
+
+        map.insert( current_key, data.clone());
+        cast_stack.push_back(data.clone());
+    } else{
+        return;
+    }
     let casts: [Cast<Pk>; 10] = all_casts::<Pk>();
     while !cast_stack.is_empty()
     {
         let current = cast_stack.pop_front().unwrap();
-        if current.ms.ty.corr.base == Base::K{
-            dbg!(&current);
-        }
+
+//        if current.ms.ty.corr.base == Base::K && current.ms.ext.pk_cost >= 90 {
+//            dbg!(&current);
+//        }
         for i in 0..casts.len() {
             if let Ok(ms_type) = (casts[i].ast_type)(current.ms.ty) {
                 if !ms_type.mall.non_malleable {
@@ -726,22 +661,24 @@ fn insert_best_wrapped_helper<Pk: MiniscriptKey>(
                 let cost =
                     comp_ext_data.cost_1d(ms_ext_data.pk_cost, sat_prob, dissat_prob);
 
+                let current_key = CompilationKey::from_type(ms_type, ms_ext_data.has_verify_form);
+
                 let better_type = map
                     .iter()
-                    .map(|(ty, (elem, _)) | {
+                    .map(|(key, elem) | {
                         let elem_cost = elem.comp_ext_data.cost_1d(elem.ms.ext.pk_cost, sat_prob, dissat_prob);
-                        ty.is_supertype(ms_type) && elem_cost <= cost
+                        key.is_supertype(current_key) && elem_cost <= cost
                     })
                     .fold(false, |acc, x| acc || x);
 
                 if better_type {
                     continue;
-                } else {
-                    map.retain(
-                        |&ty, (elem , _) | {
-                            let elem_cost = elem.comp_ext_data.cost_1d(elem.ms.ext.pk_cost, sat_prob, dissat_prob);
-                            !(ms_type.is_supertype(ty) && elem_cost >= cost + 1.0)
-                        });
+                } else{
+//                    map.retain(
+//                        |&key, elem| {
+//                            let elem_cost = elem.comp_ext_data.cost_1d(elem.ms.ext.pk_cost, sat_prob, dissat_prob);
+//                            !(current_key.is_supertype(key) && elem_cost > cost)
+//                        });
                     let new_ext = AstElemExt {
                         ms: Arc::new(Miniscript {
                             node: (casts[i].node)(Arc::clone(&current.ms)),
@@ -750,7 +687,8 @@ fn insert_best_wrapped_helper<Pk: MiniscriptKey>(
                         }),
                         comp_ext_data: comp_ext_data,
                     };
-                    map.insert(ms_type, (new_ext.clone() , cost));
+                    let new_key = CompilationKey::from_type(new_ext.ms.ty, new_ext.ms.ext.has_verify_form);
+                    map.insert(new_key, new_ext.clone());
                     cast_stack.push_back(new_ext);
                 }
             }
@@ -759,7 +697,7 @@ fn insert_best_wrapped_helper<Pk: MiniscriptKey>(
 }
 
 fn insert_best_wrapped<Pk: MiniscriptKey>(
-    map: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
+    map: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
     data: AstElemExt<Pk>,
     sat_prob: f64,
     dissat_prob: Option<f64>,
@@ -771,11 +709,11 @@ fn insert_best_wrapped<Pk: MiniscriptKey>(
 }
 
 fn best_compilations<Pk>(
-    policy_cache: &mut HashMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), HashMap<types::Type, (AstElemExt<Pk>, f64)> >,
+    policy_cache: &mut HashMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), HashMap<CompilationKey, AstElemExt<Pk>> >,
     policy: &Concrete<Pk>,
     sat_prob: f64,
     dissat_prob: Option<f64>,
-) -> HashMap<types::Type, (AstElemExt<Pk>, f64)>
+) -> HashMap<CompilationKey, AstElemExt<Pk>>
 where
     Pk: MiniscriptKey,
 {
@@ -852,9 +790,9 @@ where
             assert_eq!(subs.len(), 2, "and takes 2 args");
             let left = best_compilations(policy_cache, &subs[0], sat_prob, dissat_prob);
             let right = best_compilations(policy_cache, &subs[1], sat_prob, dissat_prob);
-            for (l, _) in left.values() {
+            for l in left.values() {
                 let lref = Arc::clone(&l.ms);
-                for (r, _) in right.values() {
+                for r in right.values() {
                     #[derive(Clone)]
                     struct Try<'l, 'r, Pk: MiniscriptKey + 'l + 'r> {
                         left: &'l AstElemExt<Pk>,
@@ -907,31 +845,31 @@ where
             let rw = subs[1].0 as f64 / total;
 
             //and-or
-//                if let (&Concrete::And(ref x), _) = (&subs[0].1, &subs[1].1){
-//
-//                    let mut a1 = best_compilations(policy_cache, &x[0], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
-//                    let mut a2 = best_compilations(policy_cache, &x[0], lw * sat_prob, None);
-//
-//                    let mut b1 = best_compilations(policy_cache, &x[1], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
-//                    let mut b2 = best_compilations(policy_cache, &x[1], lw * sat_prob, None);
-//
-//                    let mut c = best_compilations(policy_cache, &subs[1].1, rw * sat_prob, dissat_prob);
-//
-//                    compile_and_or(&mut ret, &mut a1, &mut b2, &mut c, [lw, rw], sat_prob, dissat_prob);
-//                    compile_and_or(&mut ret, &mut b1, &mut a2, &mut c, [lw, rw], sat_prob, dissat_prob);
-//                };
-//                if let (_, &Concrete::And(ref x)) = (&subs[0].1, &subs[1].1) {
-//                    let mut a1 = best_compilations(policy_cache, &x[0], rw * sat_prob, dissat_prob.and_then(|x| Some(x + lw*sat_prob)));
-//                    let mut a2 = best_compilations(policy_cache, &x[0], rw * sat_prob, None);
-//
-//                    let mut b1 = best_compilations(policy_cache, &x[1], rw * sat_prob, dissat_prob.and_then(|x| Some(x + lw*sat_prob)));
-//                    let mut b2 = best_compilations(policy_cache, &x[1], rw * sat_prob, None);
-//
-//                    let mut c = best_compilations(policy_cache, &subs[0].1, rw * sat_prob, dissat_prob);
-//
-//                    compile_and_or(&mut ret, &mut a1, &mut b2, &mut c, [lw, rw], sat_prob, dissat_prob);
-//                    compile_and_or(&mut ret, &mut b1, &mut a2, &mut c, [lw, rw], sat_prob, dissat_prob);
-//                };
+                if let (&Concrete::And(ref x), _) = (&subs[0].1, &subs[1].1){
+
+                    let mut a1 = best_compilations(policy_cache, &x[0], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
+                    let mut a2 = best_compilations(policy_cache, &x[0], lw * sat_prob, None);
+
+                    let mut b1 = best_compilations(policy_cache, &x[1], lw * sat_prob, dissat_prob.and_then(|x| Some(x + rw*sat_prob)));
+                    let mut b2 = best_compilations(policy_cache, &x[1], lw * sat_prob, None);
+
+                    let mut c = best_compilations(policy_cache, &subs[1].1, rw * sat_prob, dissat_prob);
+
+                    compile_and_or(&mut ret, &mut a1, &mut b2, &mut c, [lw, rw], sat_prob, dissat_prob);
+                    compile_and_or(&mut ret, &mut b1, &mut a2, &mut c, [lw, rw], sat_prob, dissat_prob);
+                };
+                if let (_, &Concrete::And(ref x)) = (&subs[0].1, &subs[1].1) {
+                    let mut a1 = best_compilations(policy_cache, &x[0], rw * sat_prob, dissat_prob.and_then(|x| Some(x + lw*sat_prob)));
+                    let mut a2 = best_compilations(policy_cache, &x[0], rw * sat_prob, None);
+
+                    let mut b1 = best_compilations(policy_cache, &x[1], rw * sat_prob, dissat_prob.and_then(|x| Some(x + lw*sat_prob)));
+                    let mut b2 = best_compilations(policy_cache, &x[1], rw * sat_prob, None);
+
+                    let mut c = best_compilations(policy_cache, &subs[0].1, rw * sat_prob, dissat_prob);
+
+                    compile_and_or(&mut ret, &mut a1, &mut b2, &mut c, [lw, rw], sat_prob, dissat_prob);
+                    compile_and_or(&mut ret, &mut b1, &mut a2, &mut c, [lw, rw], sat_prob, dissat_prob);
+                };
 
             let dissat_probs = |w: f64| -> Vec<Option<f64>> {
                 let mut dissat_set = Vec::new();
@@ -1065,8 +1003,8 @@ where
                 //Expressions must be dissatisfiable
                 let dp = Some(dissat_prob.unwrap_or(0 as f64) + (1.0 - k_over_n) * sat_prob);
 //                dbg!(dp);
-                let (be, _) = best_e(policy_cache, ast, sp, dp);
-                let (we, _) = best_w(policy_cache, ast, sp, dp);
+                let be = best_e(policy_cache, ast, sp, dp);
+                let we = best_w(policy_cache, ast, sp, dp);
 
                 let mut diff = be.comp_ext_data.cost_1d(be.ms.ext.pk_cost, sat_prob, dissat_prob)
                     - we.comp_ext_data.cost_1d(we.ms.ext.pk_cost, sat_prob, dissat_prob);
@@ -1124,16 +1062,16 @@ where
 
 pub fn best_compilation<Pk: MiniscriptKey>(policy: &Concrete<Pk>) -> Miniscript<Pk> {
     let mut policy_cache = HashMap::new();
-    let x = &*best_t(&mut policy_cache, policy, 1.0, None).0.ms;
+    let x = &*best_t(&mut policy_cache, policy, 1.0, None).ms;
     x.clone()
 }
 /// Helper function to compile different types of or fragments.
 /// `sat_prob` and `dissat_prob` represent the sat and dissat probabilities of
 /// root or. `weights` represent the odds for taking each sub branch
 fn compile_or<Pk, F>(
-    ret: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
-    left_comp: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
-    right_comp: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
+    ret: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
+    left_comp: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
+    right_comp: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
     weights: [f64; 2],
     sat_prob: f64,
     dissat_prob: Option<f64>,
@@ -1142,9 +1080,9 @@ fn compile_or<Pk, F>(
     where Pk: MiniscriptKey,
           F: Fn(Arc<Miniscript<Pk>>, Arc<Miniscript<Pk>>) -> Terminal<Pk>,
 {
-    for (l, _) in left_comp.values_mut() {
+    for l in left_comp.values_mut() {
         let lref = Arc::clone(&l.ms);
-        for (r, _) in right_comp.values_mut() {
+        for r in right_comp.values_mut() {
             let rref = Arc::clone(&r.ms);
             let mut ast = or_type(Arc::clone(&lref), Arc::clone(&rref));
             l.comp_ext_data.branch_prob = Some(weights[0]);
@@ -1160,20 +1098,20 @@ fn compile_or<Pk, F>(
 /// `sat_prob` and `dissat_prob` represent the sat and dissat probabilities of
 /// root and_or node. `weights` represent the odds for taking each sub branch
 fn compile_and_or<Pk: MiniscriptKey>(
-    ret: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
-    a_comp: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
-    b_comp: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
-    c_comp: &mut HashMap<types::Type, (AstElemExt<Pk>, f64)>,
+    ret: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
+    a_comp: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
+    b_comp: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
+    c_comp: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
     weights: [f64; 2],
     sat_prob: f64,
     dissat_prob: Option<f64>,
 )
 {
-    for (a, _) in a_comp.values_mut() {
+    for a in a_comp.values_mut() {
         let aref = Arc::clone(&a.ms);
-        for (b, _) in b_comp.values_mut() {
+        for b in b_comp.values_mut() {
             let bref = Arc::clone(&b.ms);
-            for (c, _) in c_comp.values_mut() {
+            for c in c_comp.values_mut() {
                 let cref = Arc::clone(&c.ms);
                 let mut ast = Terminal::AndOr(Arc::clone(&aref), Arc::clone(&bref), Arc::clone(&cref));
                 a.comp_ext_data.branch_prob = Some(weights[0]);
@@ -1188,50 +1126,50 @@ fn compile_and_or<Pk: MiniscriptKey>(
 }
 
 fn best_t<Pk>(
-    policy_cache: &mut HashMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), HashMap<types::Type, (AstElemExt<Pk>, f64)> >,
-    policy: &Concrete<Pk>, sat_prob: f64, dissat_prob: Option<f64>) -> (AstElemExt<Pk>, f64)
+    policy_cache: &mut HashMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), HashMap<CompilationKey, AstElemExt<Pk>> >,
+    policy: &Concrete<Pk>, sat_prob: f64, dissat_prob: Option<f64>) -> AstElemExt<Pk>
 where
     Pk: MiniscriptKey,
 {
     best_compilations(policy_cache, policy, sat_prob, dissat_prob)
         .into_iter()
-        .filter(|&(key, _)| key.corr.base == types::Base::B)
+        .filter(|&(key, _)| key.ty.corr.base == types::Base::B)
         .map(|(_, val)| val)
         .min_by_key(|ext| {
             OrdF64(
-                ext.0.comp_ext_data
-                    .cost_1d(ext.0.ms.ext.pk_cost, sat_prob, dissat_prob),
+                ext.comp_ext_data
+                    .cost_1d(ext.ms.ext.pk_cost, sat_prob, dissat_prob),
             )
         })
         .unwrap()
 }
 
 fn best_e<Pk>(
-    policy_cache: &mut HashMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), HashMap<types::Type, (AstElemExt<Pk>, f64)> >,
-    policy: &Concrete<Pk>, sat_prob: f64, dissat_prob: Option<f64>) -> (AstElemExt<Pk>, f64)
+    policy_cache: &mut HashMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), HashMap<CompilationKey, AstElemExt<Pk>> >,
+    policy: &Concrete<Pk>, sat_prob: f64, dissat_prob: Option<f64>) -> AstElemExt<Pk>
 where
     Pk: MiniscriptKey,
 {
     best_compilations(policy_cache, policy, sat_prob, dissat_prob)
         .into_iter()
         .filter(|&(ref key, ref val)| {
-            key.corr.base == types::Base::B
-                && key.corr.unit
-                && val.0.ms.ty.mall.dissat == types::Dissat::Unique
+            key.ty.corr.base == types::Base::B
+                && key.ty.corr.unit
+                && val.ms.ty.mall.dissat == types::Dissat::Unique
         })
         .map(|(_, val)| val)
         .min_by_key(|ext| {
             OrdF64(
-                ext.0.comp_ext_data
-                    .cost_1d(ext.0.ms.ext.pk_cost, sat_prob, dissat_prob),
+                ext.comp_ext_data
+                    .cost_1d(ext.ms.ext.pk_cost, sat_prob, dissat_prob),
             )
         })
         .unwrap()
 }
 
 fn best_w<Pk>(
-    policy_cache: &mut HashMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), HashMap<types::Type, (AstElemExt<Pk>, f64)> >,
-    policy: &Concrete<Pk>, sat_prob: f64, dissat_prob: Option<f64>) -> (AstElemExt<Pk>, f64)
+    policy_cache: &mut HashMap<(Concrete<Pk>, OrdF64, Option<OrdF64>), HashMap<CompilationKey, AstElemExt<Pk>> >,
+    policy: &Concrete<Pk>, sat_prob: f64, dissat_prob: Option<f64>) -> AstElemExt<Pk>
 where
     Pk: MiniscriptKey,
 {
@@ -1242,15 +1180,15 @@ where
     best_compilations(policy_cache, policy, sat_prob, dissat_prob)
         .into_iter()
         .filter(|&(ref key, ref val)| {
-            key.corr.base == types::Base::W
-                && key.corr.unit
-                && val.0.ms.ty.mall.dissat == types::Dissat::Unique
+            key.ty.corr.base == types::Base::W
+                && key.ty.corr.unit
+                && val.ms.ty.mall.dissat == types::Dissat::Unique
         })
         .map(|(_, val)| val)
         .min_by_key(|ext| {
             OrdF64(
-                ext.0.comp_ext_data
-                    .cost_1d(ext.0.ms.ext.pk_cost, sat_prob, dissat_prob),
+                ext.comp_ext_data
+                    .cost_1d(ext.ms.ext.pk_cost, sat_prob, dissat_prob),
             )
         })
         .unwrap()
@@ -1315,7 +1253,7 @@ mod tests {
 
     #[test]
     fn compile_q_temp() {
-        let policy2 = DummyPolicy::from_str("thresh(2,or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk(),pk(),pk())")
+        let policy2 = DummyPolicy::from_str("and(pk(),or(pk(),or(9@pk(),older(1000))))")
             .unwrap();
         let policy = SPolicy::from_str(
             "or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)))",
@@ -1325,7 +1263,7 @@ mod tests {
         //            .expect("parsing");
 //        let (compilation, c) = best_e( &mut HashMap::new(), &policy2, 1.0, None);
         //        println!("{:?} hashMap", compilation);
-        let (compilation, c) = best_e( &mut HashMap::new(), &policy2, 1.0, None);
+        let compilation = best_t( &mut HashMap::new(), &policy2, 1.0, None);
 
                 println!(
         "{} ty {:?} ext {:?} cost {}",
@@ -1334,7 +1272,7 @@ mod tests {
             compilation.ms.ext,
             compilation
                 .comp_ext_data
-                .cost_1d(compilation.ms.ext.pk_cost, 1.0, None)
+                .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
                 );
     }
 
@@ -1367,7 +1305,7 @@ mod tests {
                 let policy = DummyPolicy::from_str(
                     "and(and(and(or(127@thresh(2,pk(),pk(),thresh(2,or(127@pk(),1@pk()),after(100),or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk())),1@pk()),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)),or(127@pk(),1@after(300))),or(127@after(400),pk()))"
                 ).expect("parsing");
-        let (compilation, cost) = best_t(&mut HashMap::new(), &policy, 1.0, None);;
+        let compilation = best_t(&mut HashMap::new(), &policy, 1.0, None);;
         for _ in 0..999 {
             best_t(&mut HashMap::new(), &policy, 1.0, None);
         }

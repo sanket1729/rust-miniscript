@@ -229,6 +229,14 @@ impl Property for ExtData {
         })
     }
 
+    //    fn and_n(l: Self, r: Self) -> Result<Self, ErrorKind> {
+    //        Ok(ExtData {
+    //            legacy_safe: legacy_safe2(l.legacy_safe, r.legacy_safe),
+    //            pk_cost: l.pk_cost + r.pk_cost + 4,
+    //            has_verify_form: false,
+    //        })
+    //    }
+
     fn or_b(l: Self, r: Self) -> Result<Self, ErrorKind> {
         Ok(ExtData {
             legacy_safe: legacy_safe2(l.legacy_safe, r.legacy_safe),

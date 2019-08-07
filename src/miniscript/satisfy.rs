@@ -64,6 +64,12 @@ pub trait Satisfier<Pk: MiniscriptKey> {
         })
     }
 
+    /// Wrapper around `lookup_pkh` that witness-serializes a dissatisfaction
+    fn lookup_pkh_dissat(&self, p: &Pk::Hash) -> Option<Vec<Vec<u8>>> {
+        self.lookup_pkh(p)
+            .map(|(pk, (sig, hashtype))| vec![vec![], pk.to_bytes()])
+    }
+
     /// Given a SHA256 hash, look up its preimage
     fn lookup_sha256(&self, _: sha256::Hash) -> Option<[u8; 32]> {
         None
@@ -102,7 +108,7 @@ pub trait Satisfiable<Pk: MiniscriptKey> {
 /// dissatisfied.
 pub trait Dissatisfiable<Pk: MiniscriptKey> {
     /// Produce a dissatisfying witness
-    fn dissatisfy(&self) -> Option<Vec<Vec<u8>>>;
+    fn dissatisfy<S: Satisfier<Pk>>(&self, satisfier: &S) -> Option<Vec<Vec<u8>>>;
 }
 
 /// Computes witness size, assuming individual pushes are less than 254 bytes
@@ -172,19 +178,19 @@ impl<Pk: MiniscriptKey> Satisfiable<Pk> for Terminal<Pk> {
                     r.node.satisfy(satisfier, age, height),
                 ) {
                     (Some(lsat), None) => {
-                        let mut rdissat = r.node.dissatisfy().unwrap();
+                        let mut rdissat = r.node.dissatisfy(satisfier).unwrap();
                         rdissat.extend(lsat);
                         Some(rdissat)
                     }
                     (None, Some(mut rsat)) => {
-                        let ldissat = l.node.dissatisfy().unwrap();
+                        let ldissat = l.node.dissatisfy(satisfier).unwrap();
                         rsat.extend(ldissat);
                         Some(rsat)
                     }
                     (None, None) => None,
                     (Some(lsat), Some(mut rsat)) => {
-                        let ldissat = l.node.dissatisfy().unwrap();
-                        let mut rdissat = r.node.dissatisfy().unwrap();
+                        let ldissat = l.node.dissatisfy(satisfier).unwrap();
+                        let mut rdissat = r.node.dissatisfy(satisfier).unwrap();
 
                         if l.ty.mall.safe && !r.ty.mall.safe {
                             rsat.extend(ldissat);
@@ -215,12 +221,12 @@ impl<Pk: MiniscriptKey> Satisfiable<Pk> for Terminal<Pk> {
                     (None, None) => None,
                     (Some(lsat), None) => Some(lsat),
                     (None, Some(mut rsat)) => {
-                        let ldissat = l.node.dissatisfy().unwrap();
+                        let ldissat = l.node.dissatisfy(satisfier).unwrap();
                         rsat.extend(ldissat);
                         Some(rsat)
                     }
                     (Some(lsat), Some(mut rsat)) => {
-                        let ldissat = l.node.dissatisfy().unwrap();
+                        let ldissat = l.node.dissatisfy(satisfier).unwrap();
 
                         if l.ty.mall.safe && !r.ty.mall.safe {
                             rsat.extend(ldissat);
@@ -288,7 +294,7 @@ impl<Pk: MiniscriptKey> Satisfiable<Pk> for Terminal<Pk> {
                 let mut ret_dis = Vec::with_capacity(subs.len());
 
                 for sub in subs.iter().rev() {
-                    let dissat = sub.node.dissatisfy().unwrap();
+                    let dissat = sub.node.dissatisfy(satisfier).unwrap();
                     if let Some(sat) = sub.node.satisfy(satisfier, age, height) {
                         ret.push(sat);
                         satisfied += 1;
@@ -364,27 +370,31 @@ impl<Pk: MiniscriptKey> Satisfiable<Pk> for Terminal<Pk> {
 }
 
 impl<Pk: MiniscriptKey> Dissatisfiable<Pk> for Terminal<Pk> {
-    fn dissatisfy(&self) -> Option<Vec<Vec<u8>>> {
+    fn dissatisfy<S: Satisfier<Pk>>(&self, satisfier: &S) -> Option<Vec<Vec<u8>>> {
         match *self {
             Terminal::Pk(..) => Some(vec![vec![]]),
+            Terminal::PkH(ref pkh) => satisfier.lookup_pkh_dissat(pkh),
             Terminal::False => Some(vec![]),
             Terminal::AndB(ref left, ref right) => {
-                let mut ret = right.node.dissatisfy()?;
-                ret.extend(left.node.dissatisfy()?);
+                let mut ret = right.node.dissatisfy(satisfier)?;
+                ret.extend(left.node.dissatisfy(satisfier)?);
                 Some(ret)
             }
             Terminal::AndOr(ref a, _, ref c) => {
-                let mut ret = c.node.dissatisfy()?;
-                ret.extend(a.node.dissatisfy()?);
+                let mut ret = c.node.dissatisfy(satisfier)?;
+                ret.extend(a.node.dissatisfy(satisfier)?);
                 Some(ret)
             }
             Terminal::OrB(ref left, ref right) | Terminal::OrD(ref left, ref right) => {
-                let mut ret = right.node.dissatisfy()?;
-                ret.extend(left.node.dissatisfy()?);
+                let mut ret = right.node.dissatisfy(satisfier)?;
+                ret.extend(left.node.dissatisfy(satisfier)?);
                 Some(ret)
             }
             Terminal::OrI(ref left, ref right) => {
-                match (left.node.dissatisfy(), right.node.dissatisfy()) {
+                match (
+                    left.node.dissatisfy(satisfier),
+                    right.node.dissatisfy(satisfier),
+                ) {
                     (None, None) => None,
                     (Some(mut l), None) => {
                         l.push(vec![1]);
@@ -400,13 +410,13 @@ impl<Pk: MiniscriptKey> Dissatisfiable<Pk> for Terminal<Pk> {
             Terminal::Thresh(_, ref subs) => {
                 let mut ret = vec![];
                 for sub in subs.iter().rev() {
-                    ret.extend(sub.node.dissatisfy()?);
+                    ret.extend(sub.node.dissatisfy(satisfier)?);
                 }
                 Some(ret)
             }
             Terminal::ThreshM(k, _) => Some(vec![vec![]; k + 1]),
             Terminal::Alt(ref sub) | Terminal::Swap(ref sub) | Terminal::Check(ref sub) => {
-                sub.node.dissatisfy()
+                sub.node.dissatisfy(satisfier)
             }
             Terminal::DupIf(..) | Terminal::NonZero(..) => Some(vec![vec![]]),
             _ => None,

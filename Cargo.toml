@@ -11,11 +11,12 @@ fuzztarget = ["secp256k1/fuzztarget"]
 compiler = []
 trace = []
 unstable = []
-default = []
+default = ["compiler"]
 
 [dependencies]
 bitcoin = "0.18"
 bitcoin_hashes = "0.7"
+multimap = "0.5.0"
 
 [dependencies.secp256k1]
 version = "0.12"

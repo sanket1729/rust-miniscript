@@ -187,7 +187,11 @@ impl Property for Malleability {
     }
 
     fn cast_true(self) -> Result<Self, ErrorKind> {
-        Ok(self)
+        Ok(Malleability {
+            dissat: Dissat::None,
+            safe: self.safe,
+            non_malleable: self.non_malleable,
+        })
     }
 
     fn cast_or_i_false(self) -> Result<Self, ErrorKind> {
@@ -230,6 +234,17 @@ impl Property for Malleability {
             non_malleable: left.non_malleable && right.non_malleable,
         })
     }
+
+    //    fn and_v(left: Self, right: Self) -> Result<Self, ErrorKind> {
+    //        Ok(Malleability {
+    //            dissat: match (left.dissat, right.dissat) {
+    //                (Dissat::None, Dissat::None) => Dissat::None,
+    //                _ => Dissat::Unknown,
+    //            },
+    //            safe: left.safe || right.safe,
+    //            non_malleable: left.non_malleable && right.non_malleable,
+    //        })
+    //    }
 
     fn or_b(left: Self, right: Self) -> Result<Self, ErrorKind> {
         Ok(Malleability {
@@ -292,10 +307,10 @@ impl Property for Malleability {
 
     fn and_or(a: Self, b: Self, c: Self) -> Result<Self, ErrorKind> {
         Ok(Malleability {
-            dissat: match (a.safe, b.dissat, c.dissat) {
-                (_, Dissat::None, Dissat::Unique) => Dissat::Unique,
-                (true, _, Dissat::Unique) => Dissat::Unique,
-                (_, Dissat::None, Dissat::None) => Dissat::None,
+            dissat: match (a.safe, a.dissat, b.dissat, c.dissat) {
+                (_, Dissat::Unique, Dissat::None, Dissat::Unique) => Dissat::Unique,
+                (true, Dissat::Unique, _, Dissat::Unique) => Dissat::Unique,
+                (_, _, Dissat::None, Dissat::None) => Dissat::None,
                 _ => Dissat::Unknown,
             },
             safe: (a.safe || b.safe) && c.safe,

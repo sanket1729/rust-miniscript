@@ -49,7 +49,10 @@ impl<Pk: MiniscriptKey> Terminal<Pk> {
             Terminal::DupIf(ref sub) => Some(('d', sub)),
             Terminal::Verify(ref sub) => Some(('v', sub)),
             Terminal::NonZero(ref sub) => Some(('j', sub)),
-            Terminal::ZeroNotEqual(ref sub) => Some(('u', sub)),
+            Terminal::ZeroNotEqual(ref sub) => Some(('n', sub)),
+            Terminal::AndV(ref sub, ref r) if r.node == Terminal::True => Some(('t', sub)),
+            Terminal::OrI(ref sub, ref r) if r.node == Terminal::False => Some(('u', sub)),
+            Terminal::OrI(ref l, ref sub) if l.node == Terminal::False => Some(('l', sub)),
             _ => None,
         }
     }
@@ -207,7 +210,11 @@ impl<Pk: MiniscriptKey> fmt::Debug for Terminal<Pk> {
                 Terminal::AndV(ref l, ref r) => write!(f, "and_v({:?},{:?})", l, r),
                 Terminal::AndB(ref l, ref r) => write!(f, "and_b({:?},{:?})", l, r),
                 Terminal::AndOr(ref a, ref b, ref c) => {
-                    write!(f, "and_or({:?},{:?},{:?})", a, b, c)
+                    if c.node == Terminal::False {
+                        write!(f, "and_n({:?},{:?},{:?})", a, b, c)
+                    } else {
+                        write!(f, "andor({:?},{:?},{:?})", a, b, c)
+                    }
                 }
                 Terminal::OrB(ref l, ref r) => write!(f, "or_b({:?},{:?})", l, r),
                 Terminal::OrD(ref l, ref r) => write!(f, "or_d({:?},{:?})", l, r),
@@ -246,13 +253,25 @@ impl<Pk: MiniscriptKey> fmt::Display for Terminal<Pk> {
             Terminal::Hash160(h) => write!(f, "hash160({})", h),
             Terminal::True => f.write_str("1"),
             Terminal::False => f.write_str("0"),
-            Terminal::AndV(ref l, ref r) => write!(f, "and_v({},{})", l, r),
+            Terminal::AndV(ref l, ref r) if r.node != Terminal::True => {
+                write!(f, "and_v({},{})", l, r)
+            }
             Terminal::AndB(ref l, ref r) => write!(f, "and_b({},{})", l, r),
-            Terminal::AndOr(ref a, ref b, ref c) => write!(f, "and_or({},{},{})", a, b, c),
+            Terminal::AndOr(ref a, ref b, ref c) => {
+                if c.node == Terminal::False {
+                    write!(f, "and_n({},{})", a, b)
+                } else {
+                    write!(f, "andor({},{},{})", a, b, c)
+                }
+            }
             Terminal::OrB(ref l, ref r) => write!(f, "or_b({},{})", l, r),
             Terminal::OrD(ref l, ref r) => write!(f, "or_d({},{})", l, r),
             Terminal::OrC(ref l, ref r) => write!(f, "or_c({},{})", l, r),
-            Terminal::OrI(ref l, ref r) => write!(f, "or_i({},{})", l, r),
+            Terminal::OrI(ref l, ref r)
+                if l.node != Terminal::False && r.node != Terminal::False =>
+            {
+                write!(f, "or_i({},{})", l, r)
+            }
             Terminal::Thresh(k, ref subs) => {
                 write!(f, "thresh({}", k)?;
                 for s in subs {
@@ -347,7 +366,7 @@ where
             ("true", 0) => Ok(Terminal::True),
             ("and_v", 2) => expression::binary(top, Terminal::AndV),
             ("and_b", 2) => expression::binary(top, Terminal::AndB),
-            ("and_or", 3) => Ok(Terminal::AndOr(
+            ("andor", 3) => Ok(Terminal::AndOr(
                 expression::FromTree::from_tree(&top.args[0])?,
                 expression::FromTree::from_tree(&top.args[2])?,
                 expression::FromTree::from_tree(&top.args[1])?,

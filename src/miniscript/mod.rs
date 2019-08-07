@@ -274,6 +274,7 @@ where
     fn from_str(s: &str) -> Result<Miniscript<Pk>, Error> {
         for ch in s.as_bytes() {
             if *ch < 20 || *ch > 127 {
+                dbg!(*ch);
                 return Err(Error::Unprintable(*ch));
             }
         }

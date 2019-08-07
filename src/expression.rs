@@ -106,6 +106,7 @@ impl<'a> Tree<'a> {
         // place and Rust gets very upset when you splinch a string.
         for ch in s.bytes() {
             if ch > 0x7f {
+                dbg!("here");
                 return Err(Error::Unprintable(ch));
             }
         }

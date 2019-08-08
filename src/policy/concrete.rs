@@ -26,6 +26,7 @@ use policy::compiler;
 #[cfg(feature = "compiler")]
 use Miniscript;
 use {Error, MiniscriptKey};
+use policy::compiler::CompilerError;
 
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
@@ -58,7 +59,7 @@ pub enum Policy<Pk: MiniscriptKey> {
 impl<Pk: MiniscriptKey> Policy<Pk> {
     /// Compile the descriptor into an optimized `Miniscript` representation
     #[cfg(feature = "compiler")]
-    pub fn compile(&self) -> Miniscript<Pk> {
+    pub fn compile(&self) -> Result<Miniscript<Pk>, CompilerError<Pk>> {
         compiler::best_compilation(self)
     }
 }

@@ -1604,186 +1604,215 @@ mod tests {
         (ret, sig)
     }
 
-    fn polict_compile_lift_check(s: &str){
-        let policy = DummyPolicy::from_str(s).expect("parse");
-        let miniscript = policy.compile();
-        assert_eq!(policy.lift(), miniscript.lift());
-    }
+//    fn polict_compile_lift_check(s: &str){
+//        let policy = DummyPolicy::from_str(s).expect("parse");
+//        let miniscript = policy.compile();
+//        assert_eq!(policy.lift(), miniscript.lift());
+//    }
+
+//    #[test]
+//    fn compile_basic() {
+//        polict_compile_lift_check("pk()");
+//        polict_compile_lift_check("after(9)");
+//        polict_compile_lift_check("older(1)");
+//        polict_compile_lift_check("sha256(1111111111111111111111111111111111111111111111111111111111111111)");
+//        polict_compile_lift_check("and(pk(),pk())");
+//        polict_compile_lift_check("or(pk(),pk())");
+//        polict_compile_lift_check("thresh(2,pk(),pk(),pk())");
+//    }
+
+    //    #[test]
+//    fn compile_q() {
+//        let policy = SPolicy::from_str("or(pk(C),pk(C))").expect("parsing");
+//        let compilation = best_t(&mut HashMap::new(), &policy, 1.0, None);
+//
+//        dbg!(&compilation);
+//        assert_eq!(
+//            compilation
+//                .comp_ext_data
+//                .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
+//            88.0 + 74.109375
+//        );
+//        assert_eq!(policy.lift().sorted(), compilation.ms.lift().sorted());
+//
+//        let policy = SPolicy::from_str(
+//            "and(and(and(or(127@thresh(2,pk(),pk(),thresh(2,or(127@pk(),1@pk()),after(100),or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk())),1@pk()),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)),or(127@pk(),1@after(300))),or(127@after(400),pk()))"
+//        ).expect("parsing");
+//        let compilation = best_t(&mut HashMap::new(), &policy, 1.0, None);
+//
+//        assert_eq!(
+//            compilation
+//                .comp_ext_data
+//                .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
+//            437.0 + 299.7310587565105
+//        );
+//        assert_eq!(policy.lift().sorted(), compilation.ms.lift().sorted());
+//    }
 
     #[test]
-    fn compile_basic() {
-        polict_compile_lift_check("pk()");
-        polict_compile_lift_check("after(9)");
-        polict_compile_lift_check("older(1)");
-        polict_compile_lift_check("sha256(1111111111111111111111111111111111111111111111111111111111111111)");
-        polict_compile_lift_check("and(pk(),pk())");
-        polict_compile_lift_check("or(pk(),pk())");
-        polict_compile_lift_check("thresh(2,pk(),pk(),pk())");
+    fn file_input(){
+        use std::io::{self, BufReader};
+        use std::io::prelude::*;
+        use std::fs::File;
+        use std::str::FromStr;
+
+        let f = File::open("test").unwrap();
+        let f = BufReader::new(f);
+
+        let mut i = 0;
+        for line in f.lines() {
+            let s = line.unwrap();
+            let s = s.replace("H", "1111111111111111111111111111111111111111111111111111111111111111");
+            let policy = SPolicy::from_str(&s).expect("parsinclearg");
+            let compilation = best_t(&mut HashMap::new(), &policy, 1.0, None).unwrap();
+
+            let script_size = compilation.comp_ext_data.cost_1d(compilation.ms.ext.pk_cost, 1.0, None);
+            println!("{:7} {:17.10} {:5} {} {}",
+                     i,
+                     script_size,
+                     compilation.ms.ext.pk_cost,
+                     compilation.ms.to_string().replace("1111111111111111111111111111111111111111111111111111111111111111", "H"),
+                     s.replace("1111111111111111111111111111111111111111111111111111111111111111", "H")
+            );
+            i = i+ 1;
+        }
     }
 
     //    #[test]
-    fn compile_q() {
-        let policy = SPolicy::from_str("or(pk(C),pk(C))").expect("parsing");
-        let compilation = best_t(&mut HashMap::new(), &policy, 1.0, None);
-
-        dbg!(&compilation);
-        assert_eq!(
-            compilation
-                .comp_ext_data
-                .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
-            88.0 + 74.109375
-        );
-        assert_eq!(policy.lift().sorted(), compilation.ms.lift().sorted());
-
-        let policy = SPolicy::from_str(
-            "and(and(and(or(127@thresh(2,pk(),pk(),thresh(2,or(127@pk(),1@pk()),after(100),or(and(pk(),after(200)),and(pk(),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925))),pk())),1@pk()),sha256(66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925)),or(127@pk(),1@after(300))),or(127@after(400),pk()))"
-        ).expect("parsing");
-        let compilation = best_t(&mut HashMap::new(), &policy, 1.0, None);
-
-        assert_eq!(
-            compilation
-                .comp_ext_data
-                .cost_1d(compilation.ms.ext.pk_cost, 1.0, None),
-            437.0 + 299.7310587565105
-        );
-        assert_eq!(policy.lift().sorted(), compilation.ms.lift().sorted());
-    }
-
-    //    #[test]
-    fn compile_misc() {
-        let (keys, sig) = pubkeys_and_a_sig(10);
-        let key_pol: Vec<BPolicy> = keys.iter().map(|k| Concrete::Key(*k)).collect();
-        let policy: BPolicy = Concrete::After(100);
-        let desc = policy.compile();
-        assert_eq!(desc.encode(), hex_script("0164b2"));
-
-        let policy: BPolicy = Concrete::Key(keys[0].clone());
-        let desc = policy.compile();
-        assert_eq!(
-            desc.encode(),
-            script::Builder::new()
-                .push_key(&keys[0])
-                .push_opcode(opcodes::all::OP_CHECKSIG)
-                .into_script()
-        );
-
-        // CSV reordering trick
-        let policy: BPolicy = policy_str!(
-            "and(after(10000),thresh(2,pk({}),pk({}),pk({})))",
-            keys[5],
-            keys[6],
-            keys[7]
-        );
-        let desc = policy.compile();
-        assert_eq!(
-            desc.encode(),
-            script::Builder::new()
-                .push_opcode(opcodes::all::OP_PUSHNUM_2)
-                .push_key(&keys[5])
-                .push_key(&keys[6])
-                .push_key(&keys[7])
-                .push_opcode(opcodes::all::OP_PUSHNUM_3)
-                .push_opcode(opcodes::all::OP_CHECKMULTISIGVERIFY)
-                .push_int(10000)
-                .push_opcode(opcodes::OP_CSV)
-                .into_script()
-        );
-
-        // Liquid policy
-        let policy: BPolicy = Concrete::Or(vec![
-            (127, Concrete::Threshold(3, key_pol[0..5].to_owned())),
-            (
-                1,
-                Concrete::And(vec![
-                    Concrete::After(10000),
-                    Concrete::Threshold(2, key_pol[5..8].to_owned()),
-                ]),
-            ),
-        ]);
-        let desc = policy.compile();
-        assert_eq!(
-            desc.encode(),
-            script::Builder::new()
-                .push_opcode(opcodes::all::OP_PUSHNUM_3)
-                .push_key(&keys[0])
-                .push_key(&keys[1])
-                .push_key(&keys[2])
-                .push_key(&keys[3])
-                .push_key(&keys[4])
-                .push_opcode(opcodes::all::OP_PUSHNUM_5)
-                .push_opcode(opcodes::all::OP_CHECKMULTISIG)
-                .push_opcode(opcodes::all::OP_IFDUP)
-                .push_opcode(opcodes::all::OP_NOTIF)
-                .push_opcode(opcodes::all::OP_PUSHNUM_2)
-                .push_key(&keys[5])
-                .push_key(&keys[6])
-                .push_key(&keys[7])
-                .push_opcode(opcodes::all::OP_PUSHNUM_3)
-                .push_opcode(opcodes::all::OP_CHECKMULTISIGVERIFY)
-                .push_int(10000)
-                .push_opcode(opcodes::OP_CSV)
-                .push_opcode(opcodes::all::OP_ENDIF)
-                .into_script()
-        );
-
-        let mut abs = policy.lift();
-        assert_eq!(abs.n_keys(), 8);
-        assert_eq!(abs.minimum_n_keys(), 2);
-        abs = abs.at_age(10000);
-        assert_eq!(abs.n_keys(), 8);
-        assert_eq!(abs.minimum_n_keys(), 2);
-        abs = abs.at_age(9999);
-        assert_eq!(abs.n_keys(), 5);
-        assert_eq!(abs.minimum_n_keys(), 3);
-        abs = abs.at_age(0);
-        assert_eq!(abs.n_keys(), 5);
-        assert_eq!(abs.minimum_n_keys(), 3);
-
-        let mut sigvec = sig.serialize_der();
-        sigvec.push(1); // sighash all
-
-        struct BadSat;
-        struct GoodSat(secp256k1::Signature);
-        struct LeftSat<'a>(&'a [bitcoin::PublicKey], secp256k1::Signature);
-
-        impl<Pk: MiniscriptKey> Satisfier<Pk> for BadSat {}
-        impl<Pk: MiniscriptKey> Satisfier<Pk> for GoodSat {
-            fn lookup_pk(&self, _: &Pk) -> Option<BitcoinSig> {
-                Some((self.0, bitcoin::SigHashType::All))
-            }
-        }
-        impl<'a> Satisfier<bitcoin::PublicKey> for LeftSat<'a> {
-            fn lookup_pk(&self, pk: &bitcoin::PublicKey) -> Option<BitcoinSig> {
-                for (n, target_pk) in self.0.iter().enumerate() {
-                    if pk == target_pk && n < 5 {
-                        return Some((self.1, bitcoin::SigHashType::All));
-                    }
-                }
-                None
-            }
-        }
-
-        assert!(desc.satisfy(&BadSat, 0, 0).is_none());
-        assert!(desc.satisfy(&GoodSat(sig), 0, 0).is_some());
-        assert!(desc.satisfy(&LeftSat(&keys[..], sig), 0, 0).is_some());
-
-        let desc = policy.compile();
-
-        let ms: Miniscript<bitcoin::PublicKey> = ms_str!(
-            "or_d(thresh_m(3,{},{},{},{},{}),\
-             and_v(v:thresh(2,c:pk_h({}),\
-             ac:pk_h({}),ac:pk_h({})),after(10000)))",
-            keys[0],
-            keys[1],
-            keys[2],
-            keys[3],
-            keys[4],
-            keys[5].to_pubkeyhash(),
-            keys[6].to_pubkeyhash(),
-            keys[7].to_pubkeyhash()
-        );
-
-        assert_eq!(desc, ms);
+//    fn compile_misc() {
+//        let (keys, sig) = pubkeys_and_a_sig(10);
+//        let key_pol: Vec<BPolicy> = keys.iter().map(|k| Concrete::Key(*k)).collect();
+//        let policy: BPolicy = Concrete::After(100);
+//        let desc = policy.compile();
+//        assert_eq!(desc.encode(), hex_script("0164b2"));
+//
+//        let policy: BPolicy = Concrete::Key(keys[0].clone());
+//        let desc = policy.compile();
+//        assert_eq!(
+//            desc.encode(),
+//            script::Builder::new()
+//                .push_key(&keys[0])
+//                .push_opcode(opcodes::all::OP_CHECKSIG)
+//                .into_script()
+//        );
+//
+//        // CSV reordering trick
+//        let policy: BPolicy = policy_str!(
+//            "and(after(10000),thresh(2,pk({}),pk({}),pk({})))",
+//            keys[5],
+//            keys[6],
+//            keys[7]
+//        );
+//        let desc = policy.compile();
+//        assert_eq!(
+//            desc.encode(),
+//            script::Builder::new()
+//                .push_opcode(opcodes::all::OP_PUSHNUM_2)
+//                .push_key(&keys[5])
+//                .push_key(&keys[6])
+//                .push_key(&keys[7])
+//                .push_opcode(opcodes::all::OP_PUSHNUM_3)
+//                .push_opcode(opcodes::all::OP_CHECKMULTISIGVERIFY)
+//                .push_int(10000)
+//                .push_opcode(opcodes::OP_CSV)
+//                .into_script()
+//        );
+//
+//        // Liquid policy
+//        let policy: BPolicy = Concrete::Or(vec![
+//            (127, Concrete::Threshold(3, key_pol[0..5].to_owned())),
+//            (
+//                1,
+//                Concrete::And(vec![
+//                    Concrete::After(10000),
+//                    Concrete::Threshold(2, key_pol[5..8].to_owned()),
+//                ]),
+//            ),
+//        ]);
+//        let desc = policy.compile();
+//        assert_eq!(
+//            desc.encode(),
+//            script::Builder::new()
+//                .push_opcode(opcodes::all::OP_PUSHNUM_3)
+//                .push_key(&keys[0])
+//                .push_key(&keys[1])
+//                .push_key(&keys[2])
+//                .push_key(&keys[3])
+//                .push_key(&keys[4])
+//                .push_opcode(opcodes::all::OP_PUSHNUM_5)
+//                .push_opcode(opcodes::all::OP_CHECKMULTISIG)
+//                .push_opcode(opcodes::all::OP_IFDUP)
+//                .push_opcode(opcodes::all::OP_NOTIF)
+//                .push_opcode(opcodes::all::OP_PUSHNUM_2)
+//                .push_key(&keys[5])
+//                .push_key(&keys[6])
+//                .push_key(&keys[7])
+//                .push_opcode(opcodes::all::OP_PUSHNUM_3)
+//                .push_opcode(opcodes::all::OP_CHECKMULTISIGVERIFY)
+//                .push_int(10000)
+//                .push_opcode(opcodes::OP_CSV)
+//                .push_opcode(opcodes::all::OP_ENDIF)
+//                .into_script()
+//        );
+//
+//        let mut abs = policy.lift();
+//        assert_eq!(abs.n_keys(), 8);
+//        assert_eq!(abs.minimum_n_keys(), 2);
+//        abs = abs.at_age(10000);
+//        assert_eq!(abs.n_keys(), 8);
+//        assert_eq!(abs.minimum_n_keys(), 2);
+//        abs = abs.at_age(9999);
+//        assert_eq!(abs.n_keys(), 5);
+//        assert_eq!(abs.minimum_n_keys(), 3);
+//        abs = abs.at_age(0);
+//        assert_eq!(abs.n_keys(), 5);
+//        assert_eq!(abs.minimum_n_keys(), 3);
+//
+//        let mut sigvec = sig.serialize_der();
+//        sigvec.push(1); // sighash all
+//
+//        struct BadSat;
+//        struct GoodSat(secp256k1::Signature);
+//        struct LeftSat<'a>(&'a [bitcoin::PublicKey], secp256k1::Signature);
+//
+//        impl<Pk: MiniscriptKey> Satisfier<Pk> for BadSat {}
+//        impl<Pk: MiniscriptKey> Satisfier<Pk> for GoodSat {
+//            fn lookup_pk(&self, _: &Pk) -> Option<BitcoinSig> {
+//                Some((self.0, bitcoin::SigHashType::All))
+//            }
+//        }
+//        impl<'a> Satisfier<bitcoin::PublicKey> for LeftSat<'a> {
+//            fn lookup_pk(&self, pk: &bitcoin::PublicKey) -> Option<BitcoinSig> {
+//                for (n, target_pk) in self.0.iter().enumerate() {
+//                    if pk == target_pk && n < 5 {
+//                        return Some((self.1, bitcoin::SigHashType::All));
+//                    }
+//                }
+//                None
+//            }
+//        }
+//
+//        assert!(desc.satisfy(&BadSat, 0, 0).is_none());
+//        assert!(desc.satisfy(&GoodSat(sig), 0, 0).is_some());
+//        assert!(desc.satisfy(&LeftSat(&keys[..], sig), 0, 0).is_some());
+//
+//        let desc = policy.compile();
+//
+//        let ms: Miniscript<bitcoin::PublicKey> = ms_str!(
+//            "or_d(thresh_m(3,{},{},{},{},{}),\
+//             and_v(v:thresh(2,c:pk_h({}),\
+//             ac:pk_h({}),ac:pk_h({})),after(10000)))",
+//            keys[0],
+//            keys[1],
+//            keys[2],
+//            keys[3],
+//            keys[4],
+//            keys[5].to_pubkeyhash(),
+//            keys[6].to_pubkeyhash(),
+//            keys[7].to_pubkeyhash()
+//        );
+//
+//        assert_eq!(desc, ms);
 
         //        let mut abs = policy.into_lift();
         //        assert_eq!(abs.n_keys(), 8);
@@ -1862,7 +1891,7 @@ mod tests {
         //                vec![],
         //            ]
         //        );
-    }
+//    }
 }
 
 #[cfg(all(test, feature = "unstable"))]

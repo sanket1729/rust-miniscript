@@ -616,12 +616,6 @@ fn best_compilations<Pk: MiniscriptKey>(
             sat_prob,
             dissat_prob,
         ),
-        Concrete::KeyHash(ref pkh) => insert_best_wrapped(
-            &mut ret,
-            AstElemExt::terminal(Terminal::PkH(pkh.clone())),
-            sat_prob,
-            dissat_prob,
-        ),
         Concrete::After(n) => {
             insert_best_wrapped(
                 &mut ret,

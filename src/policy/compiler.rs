@@ -932,9 +932,10 @@ where
         )?,
         Concrete::And(ref subs) => {
             assert_eq!(subs.len(), 2, "and takes 2 args");
-            let left = best_compilations(policy_cache, &subs[0], sat_prob, dissat_prob)?;
-            let right = best_compilations(policy_cache, &subs[1], sat_prob, dissat_prob)?;
-            let q_zero_right = best_compilations(policy_cache, &subs[1], sat_prob, None)?;
+            let mut left = best_compilations(policy_cache, &subs[0], sat_prob, dissat_prob)?;
+            let mut right = best_compilations(policy_cache, &subs[1], sat_prob, dissat_prob)?;
+            let mut q_zero_right = best_compilations(policy_cache, &subs[1], sat_prob, None)?;
+            let mut q_zero_left = best_compilations(policy_cache, &subs[0], sat_prob, None)?;
             for l in left.values() {
                 let lref = Arc::clone(&l.ms);
                 for r in right.values() {
@@ -997,48 +998,8 @@ where
                     }
                 }
             }
-            for l in left.values() {
-                let lref = Arc::clone(&l.ms);
-                for r in q_zero_right.values() {
-                    let rref = Arc::clone(&r.ms);
-                    let and_n = Terminal::AndOr(
-                        Arc::clone(&lref),
-                        Arc::clone(&rref),
-                        Arc::new(
-                            Miniscript::from_ast(Terminal::False)
-                                .expect("False Miniscript creation"),
-                        ),
-                    );
-                    if let Ok(new_ext) = AstElemExt::and_n(and_n, l, r) {
-                        insert_best_wrapped(
-                            policy_cache,
-                            policy,
-                            &mut ret,
-                            new_ext,
-                            sat_prob,
-                            dissat_prob,
-                        )?;
-                    }
-                    let and_n_s = Terminal::AndOr(
-                        Arc::clone(&rref),
-                        Arc::clone(&lref),
-                        Arc::new(
-                            Miniscript::from_ast(Terminal::False)
-                                .expect("False Miniscript creation"),
-                        ),
-                    );
-                    if let Ok(new_ext) = AstElemExt::and_n(and_n_s, r, l) {
-                        insert_best_wrapped(
-                            policy_cache,
-                            policy,
-                            &mut ret,
-                            new_ext,
-                            sat_prob,
-                            dissat_prob,
-                        )?;
-                    }
-                }
-            }
+            compile_and_n(policy_cache, policy, &mut ret, &mut left, &mut q_zero_right, [1.0,1.0], sat_prob, dissat_prob);
+            compile_and_n(policy_cache, policy, &mut ret, &mut right, &mut q_zero_left, [1.0,1.0], sat_prob, dissat_prob);
         }
         Concrete::Or(ref subs) => {
             let total = (subs[0].0 + subs[1].0) as f64;
@@ -1407,6 +1368,52 @@ fn compile_or<Pk, F>(
             r.comp_ext_data.branch_prob = Some(weights[1]);
             if let Ok(new_ext) = AstElemExt::binary(ast, l, r) {
                 insert_best_wrapped(policy_cache, policy, ret, new_ext, sat_prob, dissat_prob)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+
+/// Helper function to compile different types of or fragments.
+/// `sat_prob` and `dissat_prob` represent the sat and dissat probabilities of
+/// root or. `weights` represent the odds for taking each sub branch
+fn compile_and_n<Pk>(
+    policy_cache: &mut HashMap<
+        (Concrete<Pk>, OrdF64, Option<OrdF64>),
+        HashMap<CompilationKey, AstElemExt<Pk>>,
+    >,
+    policy: &Concrete<Pk>,
+    ret: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
+    left_comp: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
+    right_comp: &mut HashMap<CompilationKey, AstElemExt<Pk>>,
+    weights: [f64; 2],
+    sat_prob: f64,
+    dissat_prob: Option<f64>,
+) -> Result<(), CompilerError<Pk>> where
+    Pk: MiniscriptKey,
+{
+    for (k, l) in left_comp.iter_mut() {
+        let lref = Arc::clone(&l.ms);
+        for (k2, r) in right_comp.iter_mut() {
+            let rref = Arc::clone(&r.ms);
+            let and_n = Terminal::AndOr(
+                Arc::clone(&lref),
+                Arc::clone(&rref),
+                Arc::new(
+                    Miniscript::from_ast(Terminal::False)
+                        .expect("False Miniscript creation"),
+                ),
+            );
+            if let Ok(new_ext) = AstElemExt::and_n(and_n, l, r) {
+                insert_best_wrapped(
+                    policy_cache,
+                    policy,
+                    ret,
+                    new_ext,
+                    sat_prob,
+                    dissat_prob,
+                )?;
             }
         }
     }

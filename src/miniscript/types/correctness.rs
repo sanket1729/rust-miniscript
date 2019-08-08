@@ -17,7 +17,7 @@
 use super::{ErrorKind, Property};
 
 /// Basic type representing where the fragment can go
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum Base {
     /// Takes its inputs from the top of the stack. Pushes
     /// nonzero if the condition is satisfied. If not, if it
@@ -40,7 +40,7 @@ pub enum Base {
 
 /// Type property representing expectations about how many inputs
 /// the fragment accepts, and assumptions about that
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub enum Input {
     /// Consumes no stack elements under any circumstances
     Zero,
@@ -61,7 +61,7 @@ pub enum Input {
 /// relevant to completeness (are all expected branches actually accessible,
 /// given some valid witness) and soundness (is it possible to satisfy the
 /// Script without satisfying one of the Miniscript branches).
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Correctness {
     /// The base type
     pub base: Base,

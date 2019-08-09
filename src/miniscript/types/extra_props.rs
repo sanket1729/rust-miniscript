@@ -3,6 +3,7 @@
 
 use super::{Error, ErrorKind, Property};
 use script_num_size;
+use std::cmp;
 use MiniscriptKey;
 use Terminal;
 
@@ -31,6 +32,10 @@ pub struct ExtData {
     pub pk_cost: usize,
     /// Whether this fragment can be verify-wrapped for free
     pub has_verify_form: bool,
+    /// The worst case ops-count for this Miniscript fragment. Since, the
+    /// nOpsCount check in bitcoin is implemented at runtime, we make a
+    /// conservative estimate here.
+    ops_count: usize,
 }
 
 impl Property for ExtData {
@@ -43,6 +48,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: 1,
             has_verify_form: false,
+            ops_count: 0,
         }
     }
 
@@ -51,6 +57,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: 1,
             has_verify_form: false,
+            ops_count: 0,
         }
     }
 
@@ -59,6 +66,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: 34,
             has_verify_form: false,
+            ops_count: 0,
         }
     }
 
@@ -67,6 +75,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::SegwitOnly,
             pk_cost: 24,
             has_verify_form: false,
+            ops_count: 3,
         }
     }
 
@@ -81,6 +90,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: num_cost + 34 * n + 1,
             has_verify_form: true,
+            ops_count: n + 1,
         }
     }
 
@@ -94,6 +104,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: 33 + 6,
             has_verify_form: true,
+            ops_count: 3,
         }
     }
 
@@ -102,6 +113,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: 33 + 6,
             has_verify_form: true,
+            ops_count: 3,
         }
     }
 
@@ -110,6 +122,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: 21 + 6,
             has_verify_form: true,
+            ops_count: 3,
         }
     }
 
@@ -118,6 +131,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: 21 + 6,
             has_verify_form: true,
+            ops_count: 3,
         }
     }
 
@@ -126,6 +140,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::LegacySafe,
             pk_cost: script_num_size(t as usize) + 1,
             has_verify_form: false,
+            ops_count: 1,
         }
     }
     fn cast_alt(self) -> Result<Self, ErrorKind> {
@@ -133,6 +148,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + 2,
             has_verify_form: false,
+            ops_count: self.ops_count + 2,
         })
     }
 
@@ -141,6 +157,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + 1,
             has_verify_form: self.has_verify_form,
+            ops_count: self.ops_count + 1,
         })
     }
 
@@ -149,6 +166,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + 1,
             has_verify_form: true,
+            ops_count: self.ops_count + 1,
         })
     }
 
@@ -157,6 +175,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::SegwitOnly,
             pk_cost: self.pk_cost + 3,
             has_verify_form: false,
+            ops_count: self.ops_count + 3,
         })
     }
 
@@ -165,6 +184,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + if self.has_verify_form { 0 } else { 1 },
             has_verify_form: false,
+            ops_count: self.ops_count + if self.has_verify_form { 0 } else { 1 },
         })
     }
 
@@ -173,6 +193,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + 4,
             has_verify_form: false,
+            ops_count: self.ops_count + 4,
         })
     }
 
@@ -181,6 +202,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + 1,
             has_verify_form: false,
+            ops_count: self.ops_count + 1,
         })
     }
 
@@ -189,6 +211,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + 1,
             has_verify_form: false,
+            ops_count: self.ops_count,
         })
     }
 
@@ -202,6 +225,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + 4,
             has_verify_form: false,
+            ops_count: self.ops_count + 3,
         })
     }
 
@@ -210,6 +234,7 @@ impl Property for ExtData {
             legacy_safe: self.legacy_safe,
             pk_cost: self.pk_cost + 4,
             has_verify_form: false,
+            ops_count: self.ops_count + 3,
         })
     }
 
@@ -218,6 +243,7 @@ impl Property for ExtData {
             legacy_safe: legacy_safe2(l.legacy_safe, r.legacy_safe),
             pk_cost: l.pk_cost + r.pk_cost + 1,
             has_verify_form: false,
+            ops_count: l.ops_count + r.ops_count + 1,
         })
     }
 
@@ -226,6 +252,7 @@ impl Property for ExtData {
             legacy_safe: legacy_safe2(l.legacy_safe, r.legacy_safe),
             pk_cost: l.pk_cost + r.pk_cost,
             has_verify_form: r.has_verify_form,
+            ops_count: l.ops_count + r.ops_count,
         })
     }
 
@@ -234,6 +261,7 @@ impl Property for ExtData {
             legacy_safe: legacy_safe2(l.legacy_safe, r.legacy_safe),
             pk_cost: l.pk_cost + r.pk_cost + 1,
             has_verify_form: false,
+            ops_count: l.ops_count + r.ops_count + 1,
         })
     }
 
@@ -242,6 +270,7 @@ impl Property for ExtData {
             legacy_safe: LegacySafe::SegwitOnly,
             pk_cost: l.pk_cost + r.pk_cost + 3,
             has_verify_form: false,
+            ops_count: l.ops_count + r.ops_count + 3,
         })
     }
 
@@ -250,6 +279,7 @@ impl Property for ExtData {
             legacy_safe: legacy_safe2(l.legacy_safe, r.legacy_safe),
             pk_cost: l.pk_cost + r.pk_cost + 2,
             has_verify_form: false,
+            ops_count: l.ops_count + r.ops_count + 2,
         })
     }
 
@@ -258,6 +288,7 @@ impl Property for ExtData {
             legacy_safe: legacy_safe2(l.legacy_safe, r.legacy_safe),
             pk_cost: l.pk_cost + r.pk_cost + 3,
             has_verify_form: false,
+            ops_count: cmp::max(l.ops_count, r.ops_count) + 3,
         })
     }
 
@@ -266,6 +297,7 @@ impl Property for ExtData {
             legacy_safe: legacy_safe2(legacy_safe2(a.legacy_safe, b.legacy_safe), c.legacy_safe),
             pk_cost: a.pk_cost + b.pk_cost + c.pk_cost + 3,
             has_verify_form: false,
+            ops_count: a.ops_count + cmp::max(b.ops_count, c.ops_count) + 3,
         })
     }
 
@@ -275,15 +307,18 @@ impl Property for ExtData {
     {
         let mut pk_cost = 1 + script_num_size(k); //Equal and k
         let mut legacy_safe = LegacySafe::LegacySafe;
+        let mut ops_count = 0 as usize;
         for i in 0..n {
             let sub = sub_ck(i)?;
             pk_cost += sub.pk_cost;
+            ops_count += sub.ops_count;
             legacy_safe = legacy_safe2(legacy_safe, sub.legacy_safe);
         }
         Ok(ExtData {
             legacy_safe: legacy_safe,
             pk_cost: pk_cost + n - 1, //all pk cost + (n-1)*ADD
             has_verify_form: true,
+            ops_count: ops_count,
         })
     }
 

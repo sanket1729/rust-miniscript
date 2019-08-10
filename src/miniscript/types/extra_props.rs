@@ -7,6 +7,8 @@ use std::cmp;
 use MiniscriptKey;
 use Terminal;
 
+pub const MAX_OPS_PER_SCRIPT: usize = 201;
+
 /// Whether a fragment is OK to be used in non-segwit scripts
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub enum LegacySafe {
@@ -35,7 +37,7 @@ pub struct ExtData {
     /// The worst case ops-count for this Miniscript fragment. Since, the
     /// nOpsCount check in bitcoin is implemented at runtime, we make a
     /// conservative estimate here.
-    ops_count: usize,
+    pub ops_count: usize,
 }
 
 impl Property for ExtData {

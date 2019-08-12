@@ -844,7 +844,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Terminal<Pk> {
                     .map(|sub| {
                         (
                             sub.node.max_satisfaction_witness_elements(),
-                            sub.node.max_dissatisfaction_witness_elements().unwrap(),
+                            sub.node.max_dissatisfaction_witness_elements().expect("dissat?"),
                         )
                     })
                     .collect::<Vec<(usize, usize)>>();

@@ -246,7 +246,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Satisfiable<Pk> for Terminal<Pk> {
     ) -> Option<Vec<Vec<u8>>> {
         match *self {
             Terminal::Pk(ref pk) => satisfier.lookup_pk_vec(pk).map(|sig| vec![sig]),
-            Terminal::PkH(ref pkh) => satisfier.lookup_pkh_wit(pkh),
+            Terminal::PkH(ref pkh) => {
+                satisfier.lookup_pkh_wit(pkh)
+            },
             Terminal::After(t) => {
                 if age >= t {
                     Some(vec![])
@@ -500,7 +502,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Dissatisfiable<Pk> for Terminal<Pk> {
                     .and_then(|(pk, _sig)| Some(vec![pk.to_bytes()]));
                 match (pk1, pk2) {
                     (Some(x), _) | (_, Some(x)) => Some(x),
-                    _ => None,
+                    _ => {println!("Error here");None}
                 }
             }
             Terminal::False => Some(vec![]),
@@ -541,6 +543,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Dissatisfiable<Pk> for Terminal<Pk> {
                 for sub in subs.iter().rev() {
                     ret.extend(sub.node.dissatisfy(satisfier)?);
                 }
+                dbg!(&ret);
                 Some(ret)
             }
             Terminal::ThreshM(k, _) => Some(vec![vec![]; k + 1]),

@@ -816,9 +816,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Terminal<Pk> {
                     + r.node.max_satisfaction_witness_elements()
             }
             Terminal::AndOr(ref a, ref b, ref c) => cmp::max(
-                a.node.max_satisfaction_witness_elements()
-                    + c.node.max_satisfaction_witness_elements(),
                 a.node.max_dissatisfaction_witness_elements().unwrap()
+                    + c.node.max_satisfaction_witness_elements(),
+                a.node.max_satisfaction_witness_elements()
                     + b.node.max_satisfaction_witness_elements(),
             ),
             Terminal::OrB(ref l, ref r) => cmp::max(
@@ -844,7 +844,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Terminal<Pk> {
                     .map(|sub| {
                         (
                             sub.node.max_satisfaction_witness_elements(),
-                            sub.node.max_dissatisfaction_witness_elements().expect("dissat?"),
+                            sub.node
+                                .max_dissatisfaction_witness_elements()
+                                .expect("dissat?"),
                         )
                     })
                     .collect::<Vec<(usize, usize)>>();
@@ -898,9 +900,9 @@ impl<Pk: MiniscriptKey + ToPublicKey> Terminal<Pk> {
                 l.node.max_satisfaction_size(one_cost) + r.node.max_satisfaction_size(one_cost)
             }
             Terminal::AndOr(ref a, ref b, ref c) => cmp::max(
-                a.node.max_satisfaction_size(one_cost) + c.node.max_satisfaction_size(one_cost),
+                a.node.max_satisfaction_size(one_cost) + b.node.max_satisfaction_size(one_cost),
                 a.node.max_dissatisfaction_size(one_cost).unwrap()
-                    + b.node.max_satisfaction_size(one_cost),
+                    + c.node.max_satisfaction_size(one_cost),
             ),
             Terminal::OrB(ref l, ref r) => cmp::max(
                 l.node.max_satisfaction_size(one_cost)

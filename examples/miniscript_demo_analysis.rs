@@ -4,93 +4,91 @@ extern crate bitcoin;
 extern crate miniscript;
 extern crate secp256k1;
 
-use bitcoin::PublicKey;
-use miniscript::policy::concrete::Policy;
 use miniscript::policy::Liftable;
-use miniscript::policy::{compiler, Concrete};
-use miniscript::{Descriptor, Miniscript, MiniscriptKey};
-use secp256k1::{Secp256k1, VerifyOnly};
-use std::collections::HashMap;
-use std::str::FromStr;
+use miniscript::{Descriptor, Miniscript};
 
-fn thresh_str(k: usize, n: usize, pks: Vec<bitcoin::PublicKey>) -> Policy<PublicKey> {
-    let mut ms = String::new();
-    ms.push_str(&format!("thresh({}", k));
-    for i in 0..n {
-        ms.push_str(&format!(",pk({})", pks[i]));
-    }
-    ms.push_str(")");
-    Policy::<bitcoin::PublicKey>::from_str(&ms).unwrap()
+fn hex_script(s: &str) -> bitcoin::Script {
+    let v: Vec<u8> = bitcoin_hashes::hex::FromHex::from_hex(s).unwrap();
+    bitcoin::Script::from(v)
 }
 
-fn setup_keys_sigs(
-    n: usize,
-) -> (
-    Vec<bitcoin::PublicKey>,
-    Vec<Vec<u8>>,
-    Vec<secp256k1::Signature>,
-    secp256k1::Message,
-    Secp256k1<VerifyOnly>,
-) {
-    let secp_sign = secp256k1::Secp256k1::signing_only();
-    let secp_verify = secp256k1::Secp256k1::verification_only();
-    let msg =
-        secp256k1::Message::from_slice(&b"Yoda: btc, I trust. HODL I must!"[..]).expect("32 bytes");
-    let mut pks = vec![];
-    let mut secp_sigs = vec![];
-    let mut der_sigs = vec![];
-    let mut sk = [0; 32];
-    for i in 1..n + 1 {
-        sk[0] = i as u8;
-        sk[1] = (i >> 8) as u8;
-        sk[2] = (i >> 16) as u8;
-
-        let sk = secp256k1::SecretKey::from_slice(&sk[..]).expect("secret key");
-        let pk = bitcoin::PublicKey {
-            key: secp256k1::PublicKey::from_secret_key(&secp_sign, &sk),
-            compressed: true,
-        };
-        let sig = secp_sign.sign(&msg, &sk);
-        secp_sigs.push(sig);
-        let mut sigser = sig.serialize_der();
-        sigser.push(0x01); // sighash_all
-        pks.push(pk);
-        der_sigs.push(sigser);
-    }
-    (pks, der_sigs, secp_sigs, msg, secp_verify)
-}
 
 fn main() {
-    let (pks, der_sigs, secp_sigs, sighash, secp) = setup_keys_sigs(53);
 
-    //Without any probabilities.
+    let script = &hex_script(
+        "522103d0032f73d839b6ac8353373ee6960008aefef40a92015\
+         68ce2ff6a716ccb2d5d21025dc3bed6e61e0a2b10cf21c6d0934479a5ad3866196a93b\
+         6e1d5910e923ea9682103341f9ebe3e2af6f595674cb4bf62eec18d260f207cb5c263c\
+         ac4a37f7758ac8553ae6402c00fb26721028c28a97bf8298bc0d23d8c749452a32e694\
+         b65e30a9472a3954ab30fe5324caaac7c2103ab1ac1872a38a2f196bed5a6047f0da2c\
+         8130fe8de49fc4d5dfb201f7611d8e2ac937c21039729247032c0dfcf45b4841fcd72f\
+         6e9a2422631fc3466cf863e87154754dd40ac937c21032564fe9b5beef82d3703a6072\
+         53f31ef8ea1b365772df434226aee642651b3faac937c210289637f97580a796e05079\
+         1ad5a2f27af1803645d95df021a3c2d82eb8c2ca7ffac937c210271efa4e26a4179e11\
+         2860b88fc98658a4bdbc59c7ab6d4f8057c35330c7a89eeac937c2102308138e71be25\
+         e092fdc9da03d5357421bc7280356a1381a6186d63a0ca8dd7fac937c2103ff3d6136f\
+         fac5b0cbfc6c5c0c30dc01a7ea3d56c20bd3103b178e3d3ae180068ac937c2103575fc\
+         4e82a6deb65d1e5750c85b6862f6ec009281992e206c0dcc568866a3fb1ac937c21033\
+         fa915480bab8ad2531e342ba43555e7df45e17583998ad4954e7fdcbd21250aac937c2\
+         102a5ec9036b64eab7a227f26f81eea2a8fda253bbbce20102921b6a8a4790117dfac9\
+         37c210352045bcc58e07124a375ea004b3508ac80e625da2106c74f5cb023498de0545\
+         fac937c2102a153dfe913310b0949de7976146349b95a398cb0de1047290b0f975c172\
+         ad712ac937c210258b5436ebe472fdb80162c8d237603635de47b95e5e5b38a89f13d0\
+         c3220479fac937c21029a541ac6af794615935c34d088edc824c4433a83bdb5a781030\
+         c370111cf5b3aac937c210308ea9666139527a8c1dd94ce4f071fd23c8b350c5a4bb33\
+         748c4ba111faccae0ac937c210310047cff44d4a41507dbe1023981bc917c2343a4b6c\
+         ffe477293914c1a8b8a62ac937c21022f42613500b261588bf86ae4c4b563ba0f788cb\
+         f3d18ef96a8d959874a56729dac937c2103bfe8e32f707496434be64cc15901c2e04f08\
+         fe674a14b96c33fbdae70c142392ac937c210207854241cc189cce44c6998ba0263ccd\
+         9be5cb2bf65de634c07411b06a95b067ac937c210274a58da104ea99677cd2752ef2f2\
+         69261213793b4698e44d259155dd13c48eefac937c210268a975500efea30d12ffa9d8\
+         c94a93bf3faf6b8a3b9cfa3c76d28ef03a92d53eac937c2102001aeb352f44bba7928a\
+         e7767917d12de55011fe81aa42e830788ee8ce8f9a35ac937c210304e9991b92fa8c4e\
+         4e8efe4566966073319e80d3a54d4b7ab61cfcc47ddaa5d5ac937c2102535292e88441\
+         1216cf226fd0ba1c83f6f1ba90e0ad033533accc5ef5c96eadfaac937c2103151b1d0d\
+         c50625f680f8c13b5857ad2edc35c571d4cb2c94b6cdb06ccebccea3ac937c2103f0b6c\
+         9fe2e38beb2bb56b3cf3c693ce2565c47559009aa94c70a793dc9868561ac937c21020\
+         840fb547d45944ed07786a3fc9109045c523f4ca6622f5a3b9663d5c3f2b0bcac937c\
+         21020a605b16516d3f580e019f3947d686ba0aaf097243f74e9ad99880d70b0561f9ac\
+         937c2103192378a2a7c959ac6e57e61119de766c5bcf3a15f75dc0a0eac99cfe468ce4\
+         d4ac937c2103280f3bf93adbae3fb1ccc0eac0d7f494ccd83e5d2aba0f113846d00315\
+         461692ac937c2103c25f637176220cd9f3a66df315559d8263cf2a23a4ab5ab9a29313\
+         1da190b632ac937c2103c4a3f6caf9214ca13449068226f9354a7361c829acdba22493\
+         fa1a53c401474fac937c2102450816f48927c03f5f3654534454f50b0057f5ff9cb429\
+         e4f00fea29814b7a26ac937c2103bb1052d38afb54f892d3cf6b03b4f7545293c6567ff\
+         23c61faff6ecfa19e3b6dac937c21038897ab8164ea8a1037c65803d6ffb4e2c9b6f1b\
+         7e20d41e84c3f41bff8e33b7fac937c210297594a0fcc7b132cf823d203d5f9b1ccc96\
+         b72b1f232e04e96c81ce03e0d0b2fac937c2103f097f874a75b4c78c3d6f3a1c6fc1e\
+         1db1dfed227d8161ee75cf1394b2bc455cac937c21023c84a424f449939fc9651b8b0d\
+         165ba07259abf0e148bbdd2504a1165a837f2fac937c21022934de46a6d921f8720567\
+         e6b46e636236a7ed53483b13ed209584523225accdac937c2102a7d7c5940c0e5975f7\
+         b919e3b85141cbe7ce745fe19b617ba2b68d64f0391c09ac937c210269367b29253e12\
+         8f426ee44ec3d92344e21111f6fb5cf6ececdaab6c6b0e841aac937c210204efaf31d4\
+         e0c006c197cd3e426340e459491338fa36919ac4729a52c36f1a16ac937c21021ce48f\
+         4b53257be01ccb237986c1b9677a9e698fb962b108d6b2fbdc836727d8ac937c210388a\
+         0fc8d3ba29a93ad07dbad37a6d4b87f2e2672b15d331d1f6bf4f2c9119ffeac937c2102\
+         5b178dfaa49e959033cc2ba8b06d78b8b9242496329a574eb8e2b4fad4f88b6fac937c2\
+         103ec8b1cf223dc3cd8eb6d7c5fb11735e983c234b69271a3decad8bbfb2b997994ac93\
+         7c2102383b24fbea14253ac37b0d421263b716a34192516ea0837021a40b5966a06f5eac\
+         937c2103f72a42169a0475c4a342f8da97a1c0bce830183efecd0a3d81637b05d7c0d81\
+         aac937c2103f0d2dd91c4bcb630616ea9e3b2e95ec7f6f431d81bd627b62d04ac81b91af\
+         8c7ac9301238768",
+    );
 
-    let good_case = thresh_str(35, 50, pks.clone());
+    let ms = Miniscript::parse(script).unwrap();
 
-    let emergency_path = Policy::<PublicKey>::from_str(&format!(
-        "and(thresh(2,pk({}),pk({}),pk({})),after(4032))",
-        pks[50], pks[51], pks[52]
-    ))
-    .unwrap();
+    println!("Let's get a encoded script \n\n {:x} \n\n ", script);
+    let liq_des = Descriptor::Wsh(ms.clone());
 
-    // We can easily compose policies.
-    let liquid_policy =
-        Policy::<PublicKey>::from_str(&format!("or({},{})", good_case, emergency_path)).unwrap();
+    println!("{}", liq_des);
 
-    let liquid_ms = liquid_policy.compile().unwrap();
-    let liq_des = Descriptor::Wsh(liquid_ms);
-
-    println!("Without probabilities");
-    println!(" Max satisfaction weight: {} \
-    Witness Script len{}", liq_des.max_satisfaction_weight(), liq_des.witness_script().len());
-    // We can also assign probabilities.
-    let liquid_policy =
-        Policy::<PublicKey>::from_str(&format!("or(999@{},1@{})", good_case, emergency_path))
-            .unwrap();
-
-    let liquid_ms = liquid_policy.compile().unwrap();
-    let liq_des = Descriptor::Wsh(liquid_ms);
-    println!("With probability odds: 999:1");
-    println!(" Max satisfaction weight: {} \
-    Witness Script len{}", liq_des.max_satisfaction_weight(), liq_des.witness_script().len());
+    let abs = ms.lift();
+    println!("\n\n\n {}", abs);
+    let abs2 = abs.clone().at_age(0);
+    println!("\n\n\nNumber of keys {}", abs2.n_keys());
+    println!("Minimum keys for signing {} ", abs2.minimum_n_keys());
+    let abs3 = abs.at_age(9999);
+    println!("\n\n\n {}", abs3);
+    println!("\n\n\n Number of keys {}", abs3.n_keys());
+    println!("Minimum keys for signing {} ", abs3.minimum_n_keys());
 }

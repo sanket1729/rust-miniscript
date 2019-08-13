@@ -77,8 +77,8 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Terminal<Pk> {
                 Semantic::And(vec![left.node.lift(), right.node.lift()])
             }
             Terminal::AndOr(ref a, ref b, ref c) => Semantic::Or(vec![
-                Semantic::And(vec![a.node.lift(), c.node.lift()]),
-                b.node.lift(),
+                Semantic::And(vec![a.node.lift(), b.node.lift()]),
+                c.node.lift(),
             ]),
             Terminal::OrB(ref left, ref right)
             | Terminal::OrD(ref left, ref right)

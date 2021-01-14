@@ -19,9 +19,10 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki`
 //!
 
-use std::{error, fmt};
+use std::{collections::BTreeMap, error, fmt};
 
 use bitcoin;
+use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d};
 use bitcoin::secp256k1::{self, Secp256k1};
 use bitcoin::util::psbt::PartiallySignedTransaction as Psbt;
 use bitcoin::Script;
@@ -29,8 +30,8 @@ use bitcoin::Script;
 use interpreter;
 use miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use miniscript::satisfy::{bitcoinsig_from_rawsig, After, Older};
-use BitcoinSig;
 use Satisfier;
+use {BitcoinSig, Preimage32};
 use {MiniscriptKey, ToPublicKey};
 
 mod finalizer;
@@ -278,6 +279,41 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
         } else {
             <Satisfier<Pk>>::check_older(&Older(seq), n)
         }
+    }
+
+    fn lookup_hash160(&self, h: hash160::Hash) -> Option<Preimage32> {
+        lookup_hash_preimage(&self.psbt.inputs[self.index].hash160_preimages, &h)
+    }
+
+    fn lookup_sha256(&self, h: sha256::Hash) -> Option<Preimage32> {
+        lookup_hash_preimage(&self.psbt.inputs[self.index].sha256_preimages, &h)
+    }
+
+    fn lookup_hash256(&self, h: sha256d::Hash) -> Option<Preimage32> {
+        lookup_hash_preimage(&self.psbt.inputs[self.index].hash256_preimages, &h)
+    }
+
+    fn lookup_ripemd160(&self, h: ripemd160::Hash) -> Option<Preimage32> {
+        lookup_hash_preimage(&self.psbt.inputs[self.index].ripemd160_preimages, &h)
+    }
+}
+
+// Utility function to lookup a [u8;32] preimage from a psbt preimages map field
+// i.e lookup preimage for ripemd160 from ripemd160_preimages map
+// Returns Some() only if the preimage is 32 bytes
+fn lookup_hash_preimage<T: Eq + Ord>(
+    hash_preimages: &BTreeMap<T, Vec<u8>>,
+    hash: &T,
+) -> Option<Preimage32> {
+    let preimage = hash_preimages.get(hash)?;
+    if preimage.len() == 32 {
+        let mut arr = [0u8; 32];
+        for (&x, p) in preimage.iter().zip(arr.iter_mut()) {
+            *p = x;
+        }
+        Some(arr)
+    } else {
+        None
     }
 }
 

@@ -19,7 +19,7 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki`
 //!
 
-use std::{collections::BTreeMap, error, fmt};
+use std::{error, fmt};
 
 use bitcoin;
 use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d};
@@ -282,35 +282,38 @@ impl<'psbt, Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk> for PsbtInputSatisfie
     }
 
     fn lookup_hash160(&self, h: hash160::Hash) -> Option<Preimage32> {
-        lookup_hash_preimage(&self.psbt.inputs[self.index].hash160_preimages, &h)
+        self.psbt.inputs[self.index]
+            .hash160_preimages
+            .get(&h)
+            .and_then(try_vec_as_preimage32)
     }
 
     fn lookup_sha256(&self, h: sha256::Hash) -> Option<Preimage32> {
-        lookup_hash_preimage(&self.psbt.inputs[self.index].sha256_preimages, &h)
+        self.psbt.inputs[self.index]
+            .sha256_preimages
+            .get(&h)
+            .and_then(try_vec_as_preimage32)
     }
 
     fn lookup_hash256(&self, h: sha256d::Hash) -> Option<Preimage32> {
-        lookup_hash_preimage(&self.psbt.inputs[self.index].hash256_preimages, &h)
+        self.psbt.inputs[self.index]
+            .hash256_preimages
+            .get(&h)
+            .and_then(try_vec_as_preimage32)
     }
 
     fn lookup_ripemd160(&self, h: ripemd160::Hash) -> Option<Preimage32> {
-        lookup_hash_preimage(&self.psbt.inputs[self.index].ripemd160_preimages, &h)
+        self.psbt.inputs[self.index]
+            .ripemd160_preimages
+            .get(&h)
+            .and_then(try_vec_as_preimage32)
     }
 }
 
-// Utility function to lookup a [u8;32] preimage from a psbt preimages map field
-// i.e lookup preimage for ripemd160 from ripemd160_preimages map
-// Returns Some() only if the preimage is 32 bytes
-fn lookup_hash_preimage<T: Eq + Ord>(
-    hash_preimages: &BTreeMap<T, Vec<u8>>,
-    hash: &T,
-) -> Option<Preimage32> {
-    let preimage = hash_preimages.get(hash)?;
-    if preimage.len() == 32 {
+fn try_vec_as_preimage32(vec: &Vec<u8>) -> Option<Preimage32> {
+    if vec.len() == 32 {
         let mut arr = [0u8; 32];
-        for (&x, p) in preimage.iter().zip(arr.iter_mut()) {
-            *p = x;
-        }
+        arr.copy_from_slice(&vec);
         Some(arr)
     } else {
         None

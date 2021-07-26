@@ -159,6 +159,14 @@ impl MiniscriptKey for bitcoin::PublicKey {
     }
 }
 
+impl MiniscriptKey for bitcoin::schnorr::PublicKey {
+    type Hash = hash160::Hash;
+
+    fn to_pubkeyhash(&self) -> Self::Hash {
+        hash160::Hash::hash(&self.serialize())
+    }
+}
+
 impl MiniscriptKey for String {
     type Hash = String;
 
@@ -199,6 +207,20 @@ pub trait ToPublicKey: MiniscriptKey {
 impl ToPublicKey for bitcoin::PublicKey {
     fn to_public_key(&self) -> bitcoin::PublicKey {
         *self
+    }
+
+    fn hash_to_hash160(hash: &hash160::Hash) -> hash160::Hash {
+        *hash
+    }
+}
+
+impl ToPublicKey for bitcoin::schnorr::PublicKey {
+    fn to_public_key(&self) -> bitcoin::PublicKey {
+        // This code should never be used.
+        // But is implemented for completeness
+        let mut data: Vec<u8> = vec![0x02];
+        data.extend(self.serialize().iter());
+        bitcoin::PublicKey::from_slice(&data).expect("Cannot fail")
     }
 
     fn hash_to_hash160(hash: &hash160::Hash) -> hash160::Hash {
@@ -452,7 +474,7 @@ pub enum Error {
     InvalidOpcode(opcodes::All),
     /// Some opcode occurred followed by `OP_VERIFY` when it had
     /// a `VERIFY` version that should have been used instead
-    NonMinimalVerify(miniscript::lex::Token),
+    NonMinimalVerify(String),
     /// Push was illegal in some context
     InvalidPush(Vec<u8>),
     /// rust-bitcoin script error
@@ -525,6 +547,8 @@ pub enum Error {
     ImpossibleSatisfaction,
     /// Bare descriptors don't have any addresses
     BareDescriptorAddr,
+    /// PubKey invalid under current context
+    PubKeyCtxError(String, String),
 }
 
 #[doc(hidden)]
@@ -588,7 +612,7 @@ impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Error::InvalidOpcode(op) => write!(f, "invalid opcode {}", op),
-            Error::NonMinimalVerify(tok) => write!(f, "{} VERIFY", tok),
+            Error::NonMinimalVerify(ref tok) => write!(f, "{} VERIFY", tok),
             Error::InvalidPush(ref push) => write!(f, "invalid push {:?}", push), // TODO hexify this
             Error::Script(ref e) => fmt::Display::fmt(e, f),
             Error::CmsTooManyKeys(n) => write!(f, "checkmultisig with {} keys", n),
@@ -646,6 +670,9 @@ impl fmt::Display for Error {
             Error::AnalysisError(ref e) => e.fmt(f),
             Error::ImpossibleSatisfaction => write!(f, "Impossible to satisfy Miniscript"),
             Error::BareDescriptorAddr => write!(f, "Bare descriptors don't have address"),
+            Error::PubKeyCtxError(ref pk, ref ctx) => {
+                write!(f, "Pubkey error: {} under {} scriptcontext", pk, ctx)
+            }
         }
     }
 }

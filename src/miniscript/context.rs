@@ -276,6 +276,8 @@ pub trait ScriptContext:
     /// 34/66 for Bare/Legacy based on key compressedness
     /// 34 for Segwitv0, 33 for Tap
     fn pk_len<Pk: MiniscriptKey>(pk: &Pk) -> usize;
+    /// Local helper function to display error messages with context
+    fn to_string() -> String;
 }
 
 /// Legacy ScriptContext
@@ -357,6 +359,9 @@ impl ScriptContext for Legacy {
         } else {
             34
         }
+    }
+    fn to_string() -> String {
+        String::from("Legacy/p2sh")
     }
 }
 
@@ -450,6 +455,9 @@ impl ScriptContext for Segwitv0 {
 
     fn pk_len<Pk: MiniscriptKey>(_pk: &Pk) -> usize {
         34
+    }
+    fn to_string() -> String {
+        String::from("Segwitv0")
     }
 }
 
@@ -546,6 +554,9 @@ impl ScriptContext for Tap {
     fn pk_len<Pk: MiniscriptKey>(_pk: &Pk) -> usize {
         33
     }
+    fn to_string() -> String {
+        String::from("TapscriptCtx")
+    }
 }
 
 /// Bare ScriptContext
@@ -615,6 +626,9 @@ impl ScriptContext for BareCtx {
             33
         }
     }
+    fn to_string() -> String {
+        String::from("BareCtx")
+    }
 }
 
 /// "No Checks" Context
@@ -663,6 +677,10 @@ impl ScriptContext for NoChecks {
 
     fn pk_len<Pk: MiniscriptKey>(_pk: &Pk) -> usize {
         panic!("Tried to compute a pk len bound on a no-checks miniscript")
+    }
+    fn to_string() -> String {
+        // Internally used code
+        String::from("NochecksCtx")
     }
 }
 

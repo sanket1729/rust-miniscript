@@ -19,6 +19,7 @@
 
 use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use std::marker::PhantomData;
+use std::{error, fmt};
 use {bitcoin, Miniscript};
 
 use miniscript::lex::{Token as Tk, TokenIter};
@@ -32,6 +33,54 @@ use MiniscriptKey;
 
 fn return_none<T>(_: usize) -> Option<T> {
     None
+}
+
+/// Trait for parsing keys from byte slices
+pub trait ParseableKey: Sized + private::Sealed {
+    /// Parse a key from slice
+    fn from_slice(sl: &[u8]) -> Result<Self, KeyParseError>;
+}
+
+/// Decoding error while parsing keys
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum KeyParseError {
+    /// Bitcoin PublicKey parse error
+    FullKeyParseError(bitcoin::util::key::Error),
+    /// Xonly key parse Error
+    XonlyKeyParseError(bitcoin::secp256k1::Error),
+}
+
+impl ParseableKey for bitcoin::PublicKey {
+    fn from_slice(sl: &[u8]) -> Result<Self, KeyParseError> {
+        bitcoin::PublicKey::from_slice(sl).map_err(KeyParseError::FullKeyParseError)
+    }
+}
+
+impl ParseableKey for bitcoin::schnorr::PublicKey {
+    fn from_slice(sl: &[u8]) -> Result<Self, KeyParseError> {
+        bitcoin::schnorr::PublicKey::from_slice(sl).map_err(KeyParseError::XonlyKeyParseError)
+    }
+}
+
+impl error::Error for KeyParseError {}
+
+impl fmt::Display for KeyParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KeyParseError::FullKeyParseError(e) => write!(f, "FullKey Parse Error {}", e),
+            KeyParseError::XonlyKeyParseError(e) => write!(f, "XonlyKey Parse Error {}", e),
+        }
+    }
+}
+
+/// Private Mod to prevent downstream from implementing this public trait
+mod private {
+
+    pub trait Sealed {}
+
+    // Implement for those same types, but no others.
+    impl Sealed for super::bitcoin::PublicKey {}
+    impl Sealed for super::bitcoin::schnorr::PublicKey {}
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -213,11 +262,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
     }
 }
 
-/// Parse a script fragment into an `Terminal`
+/// Parse a script fragment into an `Miniscript`
 #[allow(unreachable_patterns)]
-pub fn parse<Ctx: ScriptContext>(
-    tokens: &mut TokenIter,
-) -> Result<Miniscript<bitcoin::PublicKey, Ctx>, Error> {
+pub fn parse<Ctx: ScriptContext, Pk>(tokens: &mut TokenIter) -> Result<Miniscript<Pk, Ctx>, Error>
+where
+    Pk: ParseableKey + MiniscriptKey<Hash = bitcoin::hashes::hash160::Hash>,
+{
     let mut non_term = Vec::with_capacity(tokens.len());
     let mut term = TerminalStack(Vec::with_capacity(tokens.len()));
 
@@ -230,7 +280,23 @@ pub fn parse<Ctx: ScriptContext>(
                 match_token!(
                     tokens,
                     // pubkey
-                    Tk::Pubkey(pk) => term.reduce0(Terminal::PkK(pk))?,
+                    Tk::Bytes33(pk) => {
+                        let ret = Pk::from_slice(pk)
+                            .map_err(|e| Error::PubKeyCtxError(e.to_string(), Ctx::to_string()))?;
+                        term.reduce0(Terminal::PkK(ret))?
+                    },
+                    Tk::Bytes65(pk) => {
+                        let ret = Pk::from_slice(pk)
+                            .map_err(|e| Error::PubKeyCtxError(e.to_string(), Ctx::to_string()))?;
+                        term.reduce0(Terminal::PkK(ret))?
+                    },
+                    // Note this does not collide with hash32 because they always followed by equal
+                    // and would be parsed in different branch. If we get a naked Bytes32, it must be
+                    // a x-only key
+                    Tk::Bytes32(pk) => {
+                        let ret = Pk::from_slice(pk).map_err(|e| Error::PubKeyCtxError(e.to_string(), Ctx::to_string()))?;
+                        term.reduce0(Terminal::PkK(ret))?
+                    },
                     // checksig
                     Tk::CheckSig => {
                         non_term.push(NonTerm::Check);
@@ -247,36 +313,36 @@ pub fn parse<Ctx: ScriptContext>(
                                     tokens,
                                     Tk::Dup => {
                                         term.reduce0(Terminal::PkH(
-                                            hash160::Hash::from_inner(hash)
+                                            hash160::Hash::from_slice(hash).expect("valid size")
                                         ))?
                                     },
                                     Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                         non_term.push(NonTerm::Verify);
                                         term.reduce0(Terminal::Hash160(
-                                            hash160::Hash::from_inner(hash)
+                                            hash160::Hash::from_slice(hash).expect("valid size")
                                         ))?
                                     },
                                 ),
                                 Tk::Ripemd160, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Ripemd160(
-                                        ripemd160::Hash::from_inner(hash)
+                                        ripemd160::Hash::from_slice(hash).expect("valid size")
                                     ))?
                                 },
                             ),
                             // Tk::Hash20(hash),
-                            Tk::Hash32(hash) => match_token!(
+                            Tk::Bytes32(hash) => match_token!(
                                 tokens,
                                 Tk::Sha256, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Sha256(
-                                        sha256::Hash::from_inner(hash)
+                                        sha256::Hash::from_slice(hash).expect("valid size")
                                     ))?
                                 },
                                 Tk::Hash256, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Hash256(
-                                        sha256d::Hash::from_inner(hash)
+                                        sha256d::Hash::from_slice(hash).expect("valid size")
                                     ))?
                                 },
                             ),
@@ -306,21 +372,21 @@ pub fn parse<Ctx: ScriptContext>(
                     // hashlocks
                     Tk::Equal => match_token!(
                         tokens,
-                        Tk::Hash32(hash) => match_token!(
+                        Tk::Bytes32(hash) => match_token!(
                             tokens,
                             Tk::Sha256,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Sha256(
-                                sha256::Hash::from_inner(hash)
+                                sha256::Hash::from_slice(hash).expect("valid size")
                             ))?,
                             Tk::Hash256,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Hash256(
-                                sha256d::Hash::from_inner(hash)
+                                sha256d::Hash::from_slice(hash).expect("valid size")
                             ))?,
                         ),
                         Tk::Hash20(hash) => match_token!(
@@ -330,14 +396,14 @@ pub fn parse<Ctx: ScriptContext>(
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Ripemd160(
-                                ripemd160::Hash::from_inner(hash)
+                                ripemd160::Hash::from_slice(hash).expect("valid size")
                             ))?,
                             Tk::Hash160,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Hash160(
-                                hash160::Hash::from_inner(hash)
+                                hash160::Hash::from_slice(hash).expect("valid size")
                             ))?,
                         ),
                         // thresholds
@@ -389,7 +455,10 @@ pub fn parse<Ctx: ScriptContext>(
                         for _ in 0..n {
                             match_token!(
                                 tokens,
-                                Tk::Pubkey(pk) => keys.push(pk),
+                                Tk::Bytes33(pk) => keys.push(<Pk>::from_slice(pk)
+                                    .map_err(|e| Error::PubKeyCtxError(e.to_string(), Ctx::to_string()))?),
+                                Tk::Bytes65(pk) => keys.push(<Pk>::from_slice(pk)
+                                    .map_err(|e| Error::PubKeyCtxError(e.to_string(), Ctx::to_string()))?),
                             );
                         }
                         let k = match_token!(

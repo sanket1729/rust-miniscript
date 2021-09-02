@@ -644,7 +644,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
         Pk: ToPublicKey,
     {
         match *self {
-            Terminal::PkK(ref pk) => builder.push_key(&pk.to_public_key()),
+            Terminal::PkK(ref pk) => pk.push_to_builder::<Ctx>(builder),
             Terminal::PkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
@@ -750,6 +750,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     .push_opcode(opcodes::all::OP_EQUAL)
             }
             Terminal::Multi(k, ref keys) => {
+                debug_assert!(!Ctx::is_tapctx());
                 builder = builder.push_int(k as i64);
                 for pk in keys {
                     builder = builder.push_key(&pk.to_public_key());
@@ -770,7 +771,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
     /// will handle the segwit/non-segwit technicalities for you.
     pub fn script_size(&self) -> usize {
         match *self {
-            Terminal::PkK(ref pk) => pk.serialized_len(),
+            Terminal::PkK(ref pk) => Ctx::pk_len(pk),
             Terminal::PkH(..) => 24,
             Terminal::After(n) => script_num_size(n as usize) + 1,
             Terminal::Older(n) => script_num_size(n as usize) + 1,
@@ -810,7 +811,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 script_num_size(k)
                     + 1
                     + script_num_size(pks.len())
-                    + pks.iter().map(|pk| pk.serialized_len()).sum::<usize>()
+                    + pks.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>()
             }
         }
     }

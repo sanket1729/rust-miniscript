@@ -119,6 +119,14 @@ pub struct ExtData {
     pub max_dissat_size: Option<(usize, usize)>,
     /// The timelock info about heightlocks and timelocks
     pub timelock_info: TimeLockInfo,
+    /// Maximum stack + alt stack size during satisfaction execution
+    /// This does **not** include initial witness elements. This element only captures
+    /// the additional elements that are pushed during execution.
+    pub exec_stack_elem_count_sat: Option<usize>,
+    /// Maximum stack + alt stack size during dissat execution
+    /// This does **not** include initial witness elements. This element only captures
+    /// the additional elements that are pushed during execution.
+    pub exec_stack_elem_count_dissat: Option<usize>,
 }
 
 impl Property for ExtData {
@@ -138,6 +146,8 @@ impl Property for ExtData {
             max_sat_size: Some((0, 0)),
             max_dissat_size: None,
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(1),
+            exec_stack_elem_count_dissat: None,
         }
     }
 
@@ -153,6 +163,8 @@ impl Property for ExtData {
             max_sat_size: None,
             max_dissat_size: Some((0, 0)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: None,
+            exec_stack_elem_count_dissat: Some(1),
         }
     }
 
@@ -168,6 +180,8 @@ impl Property for ExtData {
             max_sat_size: Some((73, 73)),
             max_dissat_size: Some((1, 1)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(1), // pushes the pk
+            exec_stack_elem_count_dissat: Some(1),
         }
     }
 
@@ -183,6 +197,8 @@ impl Property for ExtData {
             max_sat_size: Some((34 + 73, 34 + 73)),
             max_dissat_size: Some((35, 35)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // dup and hash push
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -204,6 +220,8 @@ impl Property for ExtData {
             max_sat_size: Some((1 + 73 * k, 1 + 73 * k)),
             max_dissat_size: Some((1 + k, 1 + k)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(n), // n pks
+            exec_stack_elem_count_dissat: Some(n),
         }
     }
 
@@ -224,6 +242,8 @@ impl Property for ExtData {
             max_sat_size: Some((33, 33)),
             max_dissat_size: Some((33, 33)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // either size <32> or <hash256> <32 byte>
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -239,6 +259,8 @@ impl Property for ExtData {
             max_sat_size: Some((33, 33)),
             max_dissat_size: Some((33, 33)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // either size <32> or <hash256> <32 byte>
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -254,6 +276,8 @@ impl Property for ExtData {
             max_sat_size: Some((33, 33)),
             max_dissat_size: Some((33, 33)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // either size <32> or <hash256> <20 byte>
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -269,6 +293,8 @@ impl Property for ExtData {
             max_sat_size: Some((33, 33)),
             max_dissat_size: Some((33, 33)),
             timelock_info: TimeLockInfo::default(),
+            exec_stack_elem_count_sat: Some(2), // either size <32> or <hash256> <20 byte>
+            exec_stack_elem_count_dissat: Some(2),
         }
     }
 
@@ -294,6 +320,8 @@ impl Property for ExtData {
                 cltv_with_time: t >= HEIGHT_TIME_THRESHOLD,
                 contains_combination: false,
             },
+            exec_stack_elem_count_sat: Some(1), // <t>
+            exec_stack_elem_count_dissat: None,
         }
     }
 
@@ -315,6 +343,8 @@ impl Property for ExtData {
                 cltv_with_time: false,
                 contains_combination: false,
             },
+            exec_stack_elem_count_sat: Some(1), // <t>
+            exec_stack_elem_count_dissat: None,
         }
     }
 
@@ -330,6 +360,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: self.max_dissat_size,
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -345,6 +377,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: self.max_dissat_size,
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -360,6 +394,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: self.max_dissat_size,
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -375,6 +411,11 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size.map(|(w, s)| (w + 2, s + 1)),
             max_dissat_size: Some((1, 1)),
             timelock_info: self.timelock_info,
+            // Technically max(1, self.exec_stack_elem_count_sat), but all miniscript expressions
+            // that can be satisfied push at least one thing onto the stack.
+            // Even all V types push something onto the stack and then remove them
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: Some(1),
         })
     }
 
@@ -391,6 +432,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: None,
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: None,
         })
     }
 
@@ -406,6 +449,8 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: Some((1, 1)),
             timelock_info: self.timelock_info,
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: Some(1),
         })
     }
 
@@ -421,6 +466,9 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: self.max_dissat_size,
             timelock_info: self.timelock_info,
+            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -436,6 +484,9 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size,
             max_dissat_size: None,
             timelock_info: self.timelock_info,
+            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -455,6 +506,10 @@ impl Property for ExtData {
             stack_elem_count_dissat: self.stack_elem_count_dissat.map(|x| x + 1),
             max_sat_size: self.max_sat_size.map(|(w, s)| (w + 2, s + 1)),
             max_dissat_size: self.max_dissat_size.map(|(w, s)| (w + 1, s + 1)),
+            // TODO: fix dissat stack elem counting above in a later commit
+            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
             timelock_info: self.timelock_info,
         })
     }
@@ -471,6 +526,10 @@ impl Property for ExtData {
             max_sat_size: self.max_sat_size.map(|(w, s)| (w + 1, s + 1)),
             max_dissat_size: self.max_dissat_size.map(|(w, s)| (w + 2, s + 1)),
             timelock_info: self.timelock_info,
+            // TODO: fix dissat stack elem counting above in a later commit
+            // Technically max(1, self.exec_stack_elem_count_sat), same rationale as cast_dupif
+            exec_stack_elem_count_sat: self.exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat: self.exec_stack_elem_count_dissat,
         })
     }
 
@@ -498,6 +557,16 @@ impl Property for ExtData {
                 .max_dissat_size
                 .and_then(|(lw, ls)| r.max_dissat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             timelock_info: TimeLockInfo::comb_and_timelocks(l.timelock_info, r.timelock_info),
+            // Left element leaves a stack result on the stack top and then right element is evaluated
+            // Therefore + 1 is added to execution size of second element
+            exec_stack_elem_count_sat: cmp::max(
+                l.exec_stack_elem_count_sat,
+                r.exec_stack_elem_count_sat.map(|x| x + 1),
+            ),
+            exec_stack_elem_count_dissat: cmp::max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat.map(|x| x + 1),
+            ),
         })
     }
 
@@ -517,6 +586,15 @@ impl Property for ExtData {
                 .and_then(|(lw, ls)| r.max_sat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             max_dissat_size: None,
             timelock_info: TimeLockInfo::comb_and_timelocks(l.timelock_info, r.timelock_info),
+            // [X] leaves no element after evaluation, hence this is the max
+            exec_stack_elem_count_sat: cmp::max(
+                l.exec_stack_elem_count_sat,
+                r.exec_stack_elem_count_sat,
+            ),
+            exec_stack_elem_count_dissat: cmp::max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat,
+            ),
         })
     }
 
@@ -553,6 +631,20 @@ impl Property for ExtData {
                 .max_dissat_size
                 .and_then(|(lw, ls)| r.max_dissat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
+            exec_stack_elem_count_sat: cmp::max(
+                cmp::max(
+                    l.exec_stack_elem_count_sat,
+                    r.exec_stack_elem_count_dissat.map(|x| x + 1),
+                ),
+                cmp::max(
+                    l.exec_stack_elem_count_dissat,
+                    r.exec_stack_elem_count_sat.map(|x| x + 1),
+                ),
+            ),
+            exec_stack_elem_count_dissat: cmp::max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat.map(|x| x + 1),
+            ),
         })
     }
 
@@ -586,6 +678,14 @@ impl Property for ExtData {
                 .max_dissat_size
                 .and_then(|(lw, ls)| r.max_dissat_size.map(|(rw, rs)| (lw + rw, ls + rs))),
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
+            exec_stack_elem_count_sat: cmp::max(
+                cmp::max(l.exec_stack_elem_count_sat, r.exec_stack_elem_count_dissat),
+                r.exec_stack_elem_count_sat,
+            ),
+            exec_stack_elem_count_dissat: cmp::max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat.map(|x| x + 1),
+            ),
         })
     }
 
@@ -613,6 +713,11 @@ impl Property for ExtData {
             ),
             max_dissat_size: None,
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
+            exec_stack_elem_count_sat: cmp::max(
+                cmp::max(l.exec_stack_elem_count_sat, r.exec_stack_elem_count_dissat),
+                r.exec_stack_elem_count_sat,
+            ),
+            exec_stack_elem_count_dissat: None,
         })
     }
 
@@ -656,6 +761,15 @@ impl Property for ExtData {
                 (None, None) => None,
             },
             timelock_info: TimeLockInfo::comb_or_timelocks(l.timelock_info, r.timelock_info),
+            // TODO: fix elem count dissat bug
+            exec_stack_elem_count_sat: cmp::max(
+                l.exec_stack_elem_count_sat,
+                r.exec_stack_elem_count_sat,
+            ),
+            exec_stack_elem_count_dissat: cmp::max(
+                l.exec_stack_elem_count_dissat,
+                r.exec_stack_elem_count_dissat,
+            ),
         })
     }
 
@@ -695,6 +809,14 @@ impl Property for ExtData {
                 TimeLockInfo::comb_and_timelocks(a.timelock_info, b.timelock_info),
                 c.timelock_info,
             ),
+            exec_stack_elem_count_sat: cmp::max(
+                cmp::max(a.exec_stack_elem_count_sat, b.exec_stack_elem_count_sat),
+                cmp::max(c.exec_stack_elem_count_sat, a.exec_stack_elem_count_dissat),
+            ),
+            exec_stack_elem_count_dissat: cmp::max(
+                a.exec_stack_elem_count_dissat,
+                c.exec_stack_elem_count_dissat,
+            ),
         })
     }
 
@@ -716,6 +838,9 @@ impl Property for ExtData {
         let mut max_sat_size_vec = Vec::with_capacity(n);
         let mut max_sat_size = Some((0, 0));
         let mut max_dissat_size = Some((0, 0));
+        // the max element count is same as max sat element count when satisfying one element + 1
+        let mut exec_stack_elem_count_sat = None;
+        let mut exec_stack_elem_count_dissat = None;
 
         for i in 0..n {
             let sub = sub_ck(i)?;
@@ -751,6 +876,17 @@ impl Property for ExtData {
                 }
                 _ => {}
             }
+            // Threshold satisfaction require satisfaction/disssat of each child
+            // Therefore, the max count is max of children + 1 (for the previous result)
+            exec_stack_elem_count_sat =
+                cmp::max(exec_stack_elem_count_sat, sub.exec_stack_elem_count_sat);
+            // satisfaction involve dissatisfactions too
+            exec_stack_elem_count_sat =
+                cmp::max(exec_stack_elem_count_sat, sub.exec_stack_elem_count_dissat);
+            exec_stack_elem_count_dissat = cmp::max(
+                exec_stack_elem_count_dissat,
+                sub.exec_stack_elem_count_dissat,
+            );
         }
 
         // We sort by [satisfaction cost - dissatisfaction cost] to make a worst-case (the most
@@ -809,6 +945,8 @@ impl Property for ExtData {
             max_sat_size,
             max_dissat_size,
             timelock_info: TimeLockInfo::combine_thresh_timelocks(k, timelocks),
+            exec_stack_elem_count_sat,
+            exec_stack_elem_count_dissat,
         })
     }
 

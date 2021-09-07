@@ -62,6 +62,8 @@ pub enum ScriptContextError {
     ImpossibleSatisfaction,
     /// No Multi Node in Taproot context
     TaprootMultiDisabled,
+    /// Stack size exceeded in script execution
+    StackSizeLimitExceeded,
 }
 
 impl fmt::Display for ScriptContextError {
@@ -118,6 +120,12 @@ impl fmt::Display for ScriptContextError {
             }
             ScriptContextError::TaprootMultiDisabled => {
                 write!(f, "No Multi node in taproot context")
+            }
+            ScriptContextError::StackSizeLimitExceeded => {
+                write!(
+                    f,
+                    "Stack limit can exceed in atleast one script path during script execution"
+                )
             }
         }
     }
@@ -512,7 +520,7 @@ impl ScriptContext for Tap {
     }
 
     fn check_local_consensus_validity<Pk: MiniscriptKey, Ctx: ScriptContext>(
-        _ms: &Miniscript<Pk, Ctx>,
+        ms: &Miniscript<Pk, Ctx>,
     ) -> Result<(), ScriptContextError> {
         // Taproot introduces the concept of sigops budget.
         // In all possible valid miniscripts satisfy the given sigops constraint
@@ -521,8 +529,15 @@ impl ScriptContext for Tap {
         // own unique signature. That is there is no way to re-use signatures for another
         // checksig. Therefore, for each successfully executed checksig, we will have
         // 64 bytes signature and thus sigops budget is always covered.
-        // There is overall limit of consensus
         // TODO: track height during execution
+        if let (Some(s), Some(h)) = (
+            ms.ext.exec_stack_elem_count_sat,
+            ms.ext.stack_elem_count_sat,
+        ) {
+            if s + h > MAX_STACK_SIZE {
+                return Err(ScriptContextError::StackSizeLimitExceeded);
+            }
+        }
         Ok(())
     }
 
@@ -536,7 +551,6 @@ impl ScriptContext for Tap {
     fn check_local_policy_validity<Pk: MiniscriptKey, Ctx: ScriptContext>(
         _ms: &Miniscript<Pk, Ctx>,
     ) -> Result<(), ScriptContextError> {
-        // TODO: check for policy execution.
         Ok(())
     }
 

@@ -993,8 +993,12 @@ where
                 })
                 .collect();
 
-            if key_vec.len() == subs.len() && subs.len() <= 20 {
-                insert_wrap!(AstElemExt::terminal(Terminal::Multi(k, key_vec)));
+            if let Some(multisig) = if key_vec.len() == subs.len() && subs.len() <= 20 {
+                Ctx::gen_multi(k, key_vec).ok()
+            } else {
+                None
+            } {
+                insert_wrap!(AstElemExt::terminal(multisig));
             }
             // Not a threshold, it's always more optimal to translate it to and()s as we save the
             // resulting threshold check (N EQUAL) in any case.

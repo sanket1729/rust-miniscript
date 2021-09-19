@@ -16,6 +16,7 @@
 //! Implementation of sorted multi primitive for descriptors
 //!
 
+use miniscript::context::IsEnabled;
 use std::{fmt, marker::PhantomData, str::FromStr};
 
 use bitcoin::blockdata::script;
@@ -50,7 +51,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         // Check the limits before creating a new SortedMultiVec
         // For example, under p2sh context the scriptlen can only be
         // upto 520 bytes.
-        let term: miniscript::decode::Terminal<Pk, Ctx> = Terminal::Multi(k, pks.clone());
+        let term: miniscript::decode::Terminal<Pk, Ctx> = Ctx::gen_multi(k, pks.clone())?;
         let ms = Miniscript::from_ast(term)?;
 
         // This would check all the consensus rules for p2sh/p2wsh and
@@ -116,19 +117,28 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for SortedMultiVec<Pk
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx>
+where
+    Ctx::MultiEnabled: IsEnabled,
+{
     /// utility function to sanity a sorted multi vec
     pub fn sanity_check(&self) -> Result<(), Error> {
-        let ms: Miniscript<Pk, Ctx> =
-            Miniscript::from_ast(Terminal::Multi(self.k, self.pks.clone()))
-                .expect("Must typecheck");
+        let ms: Miniscript<Pk, Ctx> = Miniscript::from_ast(Terminal::Multi(
+            self.k,
+            self.pks.clone(),
+            Ctx::MultiEnabled::make(),
+        ))
+        .expect("Must typecheck");
         // '?' for doing From conversion
         ms.sanity_check()?;
         Ok(())
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
+impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx>
+where
+    Ctx::MultiEnabled: IsEnabled,
+{
     /// Create Terminal::Multi containing sorted pubkeys
     pub fn sorted_node(&self) -> Terminal<Pk, Ctx>
     where
@@ -143,7 +153,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
                 .partial_cmp(&b.to_public_key().key.serialize())
                 .unwrap()
         });
-        Terminal::Multi(self.k, pks)
+        Terminal::Multi(self.k, pks, Ctx::MultiEnabled::make())
     }
 
     /// Encode as a Bitcoin script

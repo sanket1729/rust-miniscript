@@ -410,7 +410,7 @@ pub trait Property: Sized {
             Terminal::False => Ok(Self::from_false()),
             Terminal::PkK(..) => Ok(Self::from_pk_k()),
             Terminal::PkH(..) => Ok(Self::from_pk_h()),
-            Terminal::Multi(k, ref pks) => {
+            Terminal::Multi(k, ref pks, _) => {
                 if k == 0 {
                     return Err(Error {
                         fragment: fragment.clone(),
@@ -787,7 +787,7 @@ impl Property for Type {
             Terminal::False => Ok(Self::from_false()),
             Terminal::PkK(..) => Ok(Self::from_pk_k()),
             Terminal::PkH(..) => Ok(Self::from_pk_h()),
-            Terminal::Multi(k, ref pks) => {
+            Terminal::Multi(k, ref pks, _) => {
                 if k == 0 {
                     return Err(Error {
                         fragment: fragment.clone(),

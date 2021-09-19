@@ -131,6 +131,28 @@ impl fmt::Display for ScriptContextError {
     }
 }
 
+/// Top-Level trait for `Enabled` or `Disabled` types
+pub trait EnableDisable: Clone + Copy + PartialEq + Eq + fmt::Debug + Ord + hash::Hash {}
+impl EnableDisable for Enabled {}
+impl EnableDisable for Disabled {}
+/// Trivial Inhabited type for `ScriptContext` to enable
+/// features
+#[derive(Copy, Clone, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
+pub struct Enabled {}
+/// Trait for generic checkiong of Enabled
+pub trait IsEnabled {
+    fn make() -> Self;
+}
+impl IsEnabled for Enabled {
+    fn make() -> Self {
+        Enabled {}
+    }
+}
+/// Trivial Uninhabited type for `ScriptContext` to disable
+/// features
+#[derive(Copy, Clone, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
+pub enum Disabled {}
+
 /// The ScriptContext for Miniscript. Additional type information associated with
 /// miniscript that is used for carrying out checks that dependent on the
 /// context under which the script is used.
@@ -138,6 +160,13 @@ impl fmt::Display for ScriptContextError {
 pub trait ScriptContext:
     fmt::Debug + Clone + Ord + PartialOrd + Eq + PartialEq + hash::Hash + private::Sealed
 {
+    /// If Multi Type should be enabled for this ScriptContext
+    type MultiEnabled: EnableDisable;
+    /// Generate a Multi Terminal
+    fn gen_multi<Pk: MiniscriptKey>(
+        k: usize,
+        v: Vec<Pk>,
+    ) -> Result<Terminal<Pk, Self>, ScriptContextError>;
     /// Depending on ScriptContext, fragments can be malleable. For Example,
     /// under Legacy context, PkH is malleable because it is possible to
     /// estimate the cost of satisfaction because of compressed keys
@@ -296,6 +325,13 @@ pub trait ScriptContext:
 pub enum Legacy {}
 
 impl ScriptContext for Legacy {
+    type MultiEnabled = Enabled;
+    fn gen_multi<Pk: MiniscriptKey>(
+        k: usize,
+        v: Vec<Pk>,
+    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+        Ok(Terminal::Multi(k, v, Enabled {}))
+    }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(
         frag: &Terminal<Pk, Ctx>,
     ) -> Result<(), ScriptContextError> {
@@ -378,6 +414,13 @@ impl ScriptContext for Legacy {
 pub enum Segwitv0 {}
 
 impl ScriptContext for Segwitv0 {
+    type MultiEnabled = Enabled;
+    fn gen_multi<Pk: MiniscriptKey>(
+        k: usize,
+        v: Vec<Pk>,
+    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+        Ok(Terminal::Multi(k, v, Enabled {}))
+    }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(
         _frag: &Terminal<Pk, Ctx>,
     ) -> Result<(), ScriptContextError> {
@@ -407,7 +450,7 @@ impl ScriptContext for Segwitv0 {
                 }
                 Ok(())
             }
-            Terminal::Multi(_k, ref pks) => {
+            Terminal::Multi(_k, ref pks, _) => {
                 if pks.iter().any(|pk| pk.is_uncompressed()) {
                     return Err(ScriptContextError::CompressedOnly);
                 }
@@ -474,6 +517,13 @@ impl ScriptContext for Segwitv0 {
 pub enum Tap {}
 
 impl ScriptContext for Tap {
+    type MultiEnabled = Disabled;
+    fn gen_multi<Pk: MiniscriptKey>(
+        _k: usize,
+        _v: Vec<Pk>,
+    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+        Err(ScriptContextError::TaprootMultiDisabled)
+    }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(
         _frag: &Terminal<Pk, Ctx>,
     ) -> Result<(), ScriptContextError> {
@@ -509,9 +559,6 @@ impl ScriptContext for Tap {
                     return Err(ScriptContextError::UncompressedKeysNotAllowed);
                 }
                 Ok(())
-            }
-            Terminal::Multi(..) => {
-                return Err(ScriptContextError::TaprootMultiDisabled);
             }
             // What happens to the Multi node in tapscript? Do we use it, create
             // a new fragment?
@@ -581,6 +628,13 @@ impl ScriptContext for Tap {
 pub enum BareCtx {}
 
 impl ScriptContext for BareCtx {
+    type MultiEnabled = Enabled;
+    fn gen_multi<Pk: MiniscriptKey>(
+        k: usize,
+        v: Vec<Pk>,
+    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+        Ok(Terminal::Multi(k, v, Enabled {}))
+    }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(
         _frag: &Terminal<Pk, Ctx>,
     ) -> Result<(), ScriptContextError> {
@@ -621,7 +675,7 @@ impl ScriptContext for BareCtx {
                 Terminal::PkK(_pk) => Ok(()),
                 _ => Err(Error::NonStandardBareScript),
             },
-            Terminal::Multi(_k, subs) if subs.len() <= 3 => Ok(()),
+            Terminal::Multi(_k, subs, _) if subs.len() <= 3 => Ok(()),
             _ => Err(Error::NonStandardBareScript),
         }
     }
@@ -653,6 +707,13 @@ impl ScriptContext for BareCtx {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub enum NoChecks {}
 impl ScriptContext for NoChecks {
+    type MultiEnabled = Enabled;
+    fn gen_multi<Pk: MiniscriptKey>(
+        k: usize,
+        v: Vec<Pk>,
+    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+        Ok(Terminal::Multi(k, v, Enabled {}))
+    }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(
         _frag: &Terminal<Pk, Ctx>,
     ) -> Result<(), ScriptContextError> {

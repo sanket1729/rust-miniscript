@@ -175,7 +175,7 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     /// [E] ([W] ADD)* k EQUAL
     Thresh(usize, Vec<Arc<Miniscript<Pk, Ctx>>>),
     /// k (<key>)* n CHECKMULTISIG
-    Multi(usize, Vec<Pk>),
+    Multi(usize, Vec<Pk>, Ctx::MultiEnabled),
 }
 
 macro_rules! match_token {
@@ -466,7 +466,7 @@ where
                             Tk::Num(k) => k,
                         );
                         keys.reverse();
-                        term.reduce0(Terminal::Multi(k as usize, keys))?;
+                        term.reduce0(Ctx::gen_multi(k as usize, keys)?)?;
                     },
                 );
             }

@@ -117,7 +117,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     && c.real_for_each_key(pred)
             }
             Terminal::Thresh(_, ref subs) => subs.iter().all(|sub| sub.real_for_each_key(pred)),
-            Terminal::Multi(_, ref keys) => keys.iter().all(|key| pred(ForEach::Key(key))),
+            Terminal::Multi(_, ref keys, _) => keys.iter().all(|key| pred(ForEach::Key(key))),
         }
     }
     pub(super) fn real_translate_pk<FPk, FPkh, Q, Error>(
@@ -203,9 +203,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     .collect();
                 Terminal::Thresh(k, subs?)
             }
-            Terminal::Multi(k, ref keys) => {
+            Terminal::Multi(k, ref keys, enabled) => {
                 let keys: Result<Vec<Q>, _> = keys.iter().map(&mut *translatefpk).collect();
-                Terminal::Multi(k, keys?)
+                Terminal::Multi(k, keys?, enabled)
             }
         };
         Ok(frag)
@@ -303,7 +303,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
                     }
                     f.write_str(")")
                 }
-                Terminal::Multi(k, ref keys) => {
+                Terminal::Multi(k, ref keys, _) => {
                     write!(f, "multi({}", k)?;
                     for k in keys {
                         write!(f, ",{:?}", k)?;
@@ -359,7 +359,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
                 }
                 f.write_str(")")
             }
-            Terminal::Multi(k, ref keys) => {
+            Terminal::Multi(k, ref keys, _) => {
                 write!(f, "multi({}", k)?;
                 for k in keys {
                     write!(f, ",{}", k)?;
@@ -568,7 +568,7 @@ where
                     .map(|sub| expression::terminal(sub, Pk::from_str))
                     .collect();
 
-                pks.map(|pks| Terminal::Multi(k, pks))
+                pks.map(|pks| Ctx::gen_multi(k, pks).map_err(Error::ContextError))?
             }
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Miniscript",
@@ -749,7 +749,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     .push_int(k as i64)
                     .push_opcode(opcodes::all::OP_EQUAL)
             }
-            Terminal::Multi(k, ref keys) => {
+            Terminal::Multi(k, ref keys, _) => {
                 debug_assert!(!Ctx::is_tapctx());
                 builder = builder.push_int(k as i64);
                 for pk in keys {
@@ -807,7 +807,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     + subs.len() // ADD
                     - 1 // no ADD on first element
             }
-            Terminal::Multi(k, ref pks) => {
+            Terminal::Multi(k, ref pks, _) => {
                 script_num_size(k)
                     + 1
                     + script_num_size(pks.len())

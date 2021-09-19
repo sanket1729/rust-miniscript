@@ -634,7 +634,7 @@ where
                         None => return Some(Err(Error::UnexpectedStackEnd)),
                     }
                 }
-                Terminal::Multi(ref k, ref subs) if node_state.n_evaluated == 0 => {
+                Terminal::Multi(ref k, ref subs, _) if node_state.n_evaluated == 0 => {
                     let len = self.stack.len();
                     if len < k + 1 {
                         return Some(Err(Error::InsufficientSignaturesMultiSig));
@@ -681,7 +681,7 @@ where
                         }
                     }
                 }
-                Terminal::Multi(k, ref subs) => {
+                Terminal::Multi(k, ref subs, _) => {
                     if node_state.n_satisfied == k {
                         //multi-sig bug: Pop extra 0
                         if let Some(stack::Element::Dissatisfied) = self.stack.pop() {

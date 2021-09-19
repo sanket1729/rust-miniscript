@@ -51,7 +51,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         // Check the limits before creating a new SortedMultiVec
         // For example, under p2sh context the scriptlen can only be
         // upto 520 bytes.
-        let term: miniscript::decode::Terminal<Pk, Ctx> = Ctx::gen_multi(k, pks.clone())?;
+        let term: miniscript::decode::Terminal<Pk, Ctx> =
+            Ctx::gen_multi(k, pks.clone()).map_err(|e| e.into())?;
         let ms = Miniscript::from_ast(term)?;
 
         // This would check all the consensus rules for p2sh/p2wsh and

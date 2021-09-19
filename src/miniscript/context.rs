@@ -131,10 +131,27 @@ impl fmt::Display for ScriptContextError {
     }
 }
 
+/// Top-Level error trait for generating `Enabled` or `Disabled` `Terminal`s
+pub trait EnableDisableError: Into<ScriptContextError> {}
+impl EnableDisableError for ScriptContextError {}
+impl EnableDisableError for Disabled {}
 /// Top-Level trait for `Enabled` or `Disabled` types
-pub trait EnableDisable: Clone + Copy + PartialEq + Eq + fmt::Debug + Ord + hash::Hash {}
-impl EnableDisable for Enabled {}
-impl EnableDisable for Disabled {}
+pub trait EnableDisable: Clone + Copy + PartialEq + Eq + fmt::Debug + Ord + hash::Hash {
+    /// An `Enabled` `Terminal` ought to (when appropriate) have a `Disabled`
+    /// `EnableDisableError` and a `Disabled` ought to have a `ScriptContextError`
+    type ErrorType: EnableDisableError;
+}
+impl EnableDisable for Enabled {
+    type ErrorType = Disabled;
+}
+impl Into<ScriptContextError> for Disabled {
+    fn into(self) -> ScriptContextError {
+        unimplemented!("Type is Uninhabited")
+    }
+}
+impl EnableDisable for Disabled {
+    type ErrorType = ScriptContextError;
+}
 /// Trivial Inhabited type for `ScriptContext` to enable
 /// features
 #[derive(Copy, Clone, PartialEq, Eq, Debug, PartialOrd, Ord, Hash)]
@@ -166,7 +183,7 @@ pub trait ScriptContext:
     fn gen_multi<Pk: MiniscriptKey>(
         k: usize,
         v: Vec<Pk>,
-    ) -> Result<Terminal<Pk, Self>, ScriptContextError>;
+    ) -> Result<Terminal<Pk, Self>, <Self::MultiEnabled as EnableDisable>::ErrorType>;
     /// Depending on ScriptContext, fragments can be malleable. For Example,
     /// under Legacy context, PkH is malleable because it is possible to
     /// estimate the cost of satisfaction because of compressed keys
@@ -326,10 +343,7 @@ pub enum Legacy {}
 
 impl ScriptContext for Legacy {
     type MultiEnabled = Enabled;
-    fn gen_multi<Pk: MiniscriptKey>(
-        k: usize,
-        v: Vec<Pk>,
-    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+    fn gen_multi<Pk: MiniscriptKey>(k: usize, v: Vec<Pk>) -> Result<Terminal<Pk, Self>, Disabled> {
         Ok(Terminal::Multi(k, v, Enabled {}))
     }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(
@@ -415,10 +429,7 @@ pub enum Segwitv0 {}
 
 impl ScriptContext for Segwitv0 {
     type MultiEnabled = Enabled;
-    fn gen_multi<Pk: MiniscriptKey>(
-        k: usize,
-        v: Vec<Pk>,
-    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+    fn gen_multi<Pk: MiniscriptKey>(k: usize, v: Vec<Pk>) -> Result<Terminal<Pk, Self>, Disabled> {
         Ok(Terminal::Multi(k, v, Enabled {}))
     }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(
@@ -629,10 +640,7 @@ pub enum BareCtx {}
 
 impl ScriptContext for BareCtx {
     type MultiEnabled = Enabled;
-    fn gen_multi<Pk: MiniscriptKey>(
-        k: usize,
-        v: Vec<Pk>,
-    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+    fn gen_multi<Pk: MiniscriptKey>(k: usize, v: Vec<Pk>) -> Result<Terminal<Pk, Self>, Disabled> {
         Ok(Terminal::Multi(k, v, Enabled {}))
     }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(
@@ -708,10 +716,7 @@ impl ScriptContext for BareCtx {
 pub enum NoChecks {}
 impl ScriptContext for NoChecks {
     type MultiEnabled = Enabled;
-    fn gen_multi<Pk: MiniscriptKey>(
-        k: usize,
-        v: Vec<Pk>,
-    ) -> Result<Terminal<Pk, Self>, ScriptContextError> {
+    fn gen_multi<Pk: MiniscriptKey>(k: usize, v: Vec<Pk>) -> Result<Terminal<Pk, Self>, Disabled> {
         Ok(Terminal::Multi(k, v, Enabled {}))
     }
     fn check_terminal_non_malleable<Pk: MiniscriptKey, Ctx: ScriptContext>(

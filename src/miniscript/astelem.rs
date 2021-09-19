@@ -568,7 +568,7 @@ where
                     .map(|sub| expression::terminal(sub, Pk::from_str))
                     .collect();
 
-                pks.map(|pks| Ctx::gen_multi(k, pks).map_err(Error::ContextError))?
+                pks.map(|pks| Ctx::gen_multi(k, pks).map_err(|e| Error::ContextError(e.into())))?
             }
             _ => Err(Error::Unexpected(format!(
                 "{}({} args) while parsing Miniscript",

@@ -466,7 +466,7 @@ where
                             Tk::Num(k) => k,
                         );
                         keys.reverse();
-                        term.reduce0(Ctx::gen_multi(k as usize, keys)?)?;
+                        term.reduce0(Ctx::gen_multi(k as usize, keys).map_err(|e|e.into())?)?;
                     },
                 );
             }

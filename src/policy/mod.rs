@@ -21,26 +21,26 @@
 //! The format represents EC public keys abstractly to allow wallets to replace
 //! these with BIP32 paths, pay-to-contract instructions, etc.
 //!
+use descriptor::Descriptor;
+use miniscript::{Miniscript, ScriptContext};
+use Error;
+use MiniscriptKey;
+use Terminal;
 use {error, fmt};
+
+pub use self::concrete::Policy as Concrete;
+/// Semantic policies are "abstract" policies elsewhere; but we
+/// avoid this word because it is a reserved keyword in Rust
+pub use self::semantic::Policy as Semantic;
 
 #[cfg(feature = "compiler")]
 pub mod compiler;
 pub mod concrete;
 pub mod semantic;
 
-use descriptor::Descriptor;
-use miniscript::{Miniscript, ScriptContext};
-use Terminal;
-
-pub use self::concrete::Policy as Concrete;
-/// Semantic policies are "abstract" policies elsewhere; but we
-/// avoid this word because it is a reserved keyword in Rust
-pub use self::semantic::Policy as Semantic;
-use Error;
-use MiniscriptKey;
-
 /// Policy entailment algorithm maximum number of terminals allowed
 const ENTAILMENT_MAX_TERMINALS: usize = 20;
+
 /// Trait describing script representations which can be lifted into
 /// an abstract policy, by discarding information.
 /// After Lifting all policies are converted into `KeyHash(Pk::HasH)` to
@@ -228,19 +228,22 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Concrete<Pk> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+    #[cfg(feature = "compiler")]
+    use std::sync::Arc;
+
+    use bitcoin;
+
+    #[cfg(feature = "compiler")]
+    use descriptor::TapTree;
+    use DummyKey;
+    #[cfg(feature = "compiler")]
+    use {Descriptor, Tap};
+
     use super::{
         super::miniscript::{context::Segwitv0, Miniscript},
         Concrete, Liftable, Semantic,
     };
-    use bitcoin;
-    #[cfg(feature = "compiler")]
-    use descriptor::TapTree;
-    use std::str::FromStr;
-    #[cfg(feature = "compiler")]
-    use std::sync::Arc;
-    use DummyKey;
-    #[cfg(feature = "compiler")]
-    use {Descriptor, Tap};
 
     type ConcretePol = Concrete<DummyKey>;
     type SemanticPol = Semantic<DummyKey>;
@@ -272,6 +275,7 @@ mod tests {
         // thresh with k = 2
         assert!(ConcretePol::from_str("thresh(2,after(1000000000),after(100),pk())").is_err());
     }
+
     #[test]
     fn policy_rtt_tests() {
         concrete_policy_rtt("pk()");
@@ -361,11 +365,11 @@ mod tests {
                         2,
                         vec![
                             Semantic::KeyHash(key_a.pubkey_hash().as_hash()),
-                            Semantic::Older(42)
-                        ]
+                            Semantic::Older(42),
+                        ],
                     ),
-                    Semantic::KeyHash(key_b.pubkey_hash().as_hash())
-                ]
+                    Semantic::KeyHash(key_b.pubkey_hash().as_hash()),
+                ],
             ),
             ms_str.lift().unwrap()
         );
@@ -373,16 +377,34 @@ mod tests {
 
     #[test]
     #[cfg(feature = "compiler")]
-    fn single_leaf_tr_compile() {
-        for k in 1..5 {
-            let unspendable_key: String = "z".to_string();
-            let policy: Concrete<String> = policy_str!("thresh({},pk(A),pk(B),pk(C),pk(D))", k);
+    fn taproot_compile() {
+        // Trivial single-node compilation
+        let unspendable_key: String = "UNSPENDABLE".to_string();
+        {
+            let policy: Concrete<String> = policy_str!("thresh(2,pk(A),pk(B),pk(C),pk(D))");
             let descriptor = policy.compile_tr(Some(unspendable_key.clone())).unwrap();
 
-            let ms_compilation: Miniscript<String, Tap> = ms_str!("multi_a({},A,B,C,D)", k);
+            let ms_compilation: Miniscript<String, Tap> = ms_str!("multi_a(2,A,B,C,D)");
             let tree: TapTree<String> = TapTree::Leaf(Arc::new(ms_compilation));
-            let expected_descriptor = Descriptor::new_tr(unspendable_key, Some(tree)).unwrap();
+            let expected_descriptor =
+                Descriptor::new_tr(unspendable_key.clone(), Some(tree)).unwrap();
+            assert_eq!(descriptor, expected_descriptor);
+        }
 
+        // Trivial multi-node compilation
+        {
+            let policy: Concrete<String> = policy_str!("or(and(pk(A),pk(B)),and(pk(C),pk(D)))");
+            let descriptor = policy.compile_tr(Some(unspendable_key.clone())).unwrap();
+
+            let left_ms_compilation: Arc<Miniscript<String, Tap>> =
+                Arc::new(ms_str!("and_v(v:pk(C),pk(D))"));
+            let right_ms_compilation: Arc<Miniscript<String, Tap>> =
+                Arc::new(ms_str!("and_v(v:pk(A),pk(B))"));
+            let left_node: Arc<TapTree<String>> = Arc::from(TapTree::Leaf(left_ms_compilation));
+            let right_node: Arc<TapTree<String>> = Arc::from(TapTree::Leaf(right_ms_compilation));
+            let tree: TapTree<String> = TapTree::Tree(left_node, right_node);
+            let expected_descriptor =
+                Descriptor::new_tr(unspendable_key.clone(), Some(tree)).unwrap();
             assert_eq!(descriptor, expected_descriptor);
         }
     }

@@ -27,8 +27,14 @@ use miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
 use miniscript::types::extra_props::TimeLockInfo;
 #[cfg(feature = "compiler")]
 use {
-    descriptor::TapTree, miniscript::ScriptContext, policy::compiler,
-    policy::compiler::CompilerError, std::sync::Arc, Descriptor, Miniscript, Tap,
+    descriptor::TapTree,
+    miniscript::ScriptContext,
+    policy::compiler::{CompilerError, OrdF64},
+    policy::{compiler, Liftable, Semantic},
+    std::cmp::Reverse,
+    std::collections::BinaryHeap,
+    std::sync::Arc,
+    Descriptor, Miniscript, Tap,
 };
 use {Error, ForEach, ForEachKey, MiniscriptKey};
 
@@ -126,27 +132,118 @@ impl fmt::Display for PolicyError {
 }
 
 impl<Pk: MiniscriptKey> Policy<Pk> {
-    /// Single-Node compilation
+    /// Create a Huffman Tree from compiled [Miniscript] nodes
     #[cfg(feature = "compiler")]
-    fn compile_leaf_taptree(&self) -> Result<TapTree<Pk>, Error> {
-        let compilation = self.compile::<Tap>().unwrap();
-        Ok(TapTree::Leaf(Arc::new(compilation)))
+    fn with_huffman_tree<T>(
+        ms: Vec<(OrdF64, Miniscript<Pk, Tap>)>,
+        f: T,
+    ) -> Result<TapTree<Pk>, Error>
+    where
+        T: Fn(OrdF64) -> OrdF64,
+    {
+        // Pattern match terminal Or/ Terminal (with equal odds)
+        let mut node_weights = BinaryHeap::<(Reverse<OrdF64>, TapTree<Pk>)>::new();
+        for (prob, script) in ms {
+            node_weights.push((Reverse(f(prob)), TapTree::Leaf(Arc::new(script))));
+        }
+        if node_weights.is_empty() {
+            return Err(errstr("Empty Miniscript compilation"));
+        }
+        while node_weights.len() > 1 {
+            let (p1, s1) = node_weights.pop().expect("len must atleast be two");
+            let (p2, s2) = node_weights.pop().expect("len must atleast be two");
+
+            let p = (p1.0).0 + (p2.0).0;
+            node_weights.push((
+                Reverse(OrdF64(p)),
+                TapTree::Tree(Arc::from(s1), Arc::from(s2)),
+            ));
+        }
+
+        debug_assert!(node_weights.len() == 1);
+        let node = node_weights
+            .pop()
+            .expect("huffman tree algorithm is broken")
+            .1;
+        Ok(node)
     }
 
-    /// Extract the Taproot internal_key from policy tree.
+    /// Flatten the [`Policy`] tree structure into a Vector with corresponding leaf probability
+    // TODO: 1. Can try to push the maximum of scaling factors and accordingly update later for
+    // TODO: 1. integer metric. (Accordingly change metrics everywhere)
     #[cfg(feature = "compiler")]
-    fn extract_key(&self, unspendable_key: Option<Pk>) -> Result<(Pk, &Policy<Pk>), Error> {
-        match unspendable_key {
-            Some(key) => Ok((key, self)),
-            None => Err(errstr("No internal key found")),
+    fn to_tapleaf_prob_vec(&self, prob: f64) -> Vec<(f64, Policy<Pk>)> {
+        match *self {
+            Policy::Or(ref subs) => {
+                let total_odds: usize = subs.iter().map(|(ref k, _)| k).sum();
+                subs.iter()
+                    .map(|(k, ref policy)| {
+                        policy.to_tapleaf_prob_vec(prob * *k as f64 / total_odds as f64)
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }
+            Policy::Threshold(k, ref subs) if k == 1 => {
+                let total_odds = subs.len();
+                subs.iter()
+                    .map(|policy| policy.to_tapleaf_prob_vec(prob / total_odds as f64))
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }
+            ref x => vec![(prob, x.clone())],
+        }
+    }
+
+    /// Compile [`Policy::Or`] and [`Policy::Threshold`] according to odds
+    #[cfg(feature = "compiler")]
+    fn compile_tr_policy(&self) -> Result<TapTree<Pk>, Error> {
+        let leaf_compilations: Vec<_> = self
+            .to_tapleaf_prob_vec(1.0)
+            .into_iter()
+            .map(|(prob, ref policy)| (OrdF64(prob), compiler::best_compilation(policy).unwrap()))
+            .collect();
+        let taptree = Self::with_huffman_tree(leaf_compilations, |x| x).unwrap();
+        Ok(taptree)
+    }
+
+    /// Extract the internal_key from policy tree.
+    #[cfg(feature = "compiler")]
+    fn extract_key(self, unspendable_key: Option<Pk>) -> Result<(Pk, Policy<Pk>), Error> {
+        // Making sure the borrow ends before you move the value.
+        let mut internal_key: Option<Pk> = None;
+        {
+            let semantic_policy = self.lift()?;
+            let concrete_keys = self.keys();
+            for key in concrete_keys.into_iter() {
+                if semantic_policy
+                    .clone()
+                    .satisfy_constraint(&Semantic::KeyHash(key.to_pubkeyhash()), true)
+                    == Semantic::Trivial
+                {
+                    internal_key = Some(key.clone());
+                    break;
+                }
+            }
+        }
+        match (internal_key, unspendable_key) {
+            (Some(ref key), _) => Ok((key.clone(), self.translate_unsatisfiable_pk(&key))),
+            (_, Some(key)) => Ok((key, self)),
+            _ => Err(errstr("No viable internal key found.")),
         }
     }
 
     /// Compile the [`Tr`] descriptor into optimized [`TapTree`] implementation
+    // TODO: We might require other compile errors for Taproot. Will discuss and update.
     #[cfg(feature = "compiler")]
     pub fn compile_tr(&self, unspendable_key: Option<Pk>) -> Result<Descriptor<Pk>, Error> {
-        let (internal_key, policy) = self.extract_key(unspendable_key)?;
-        let tree = Descriptor::new_tr(internal_key, Some(policy.compile_leaf_taptree()?))?;
+        let (internal_key, policy) = self.clone().extract_key(unspendable_key)?;
+        let tree = Descriptor::new_tr(
+            internal_key,
+            match policy {
+                Policy::Trivial => None,
+                policy => Some(policy.compile_tr_policy()?),
+            },
+        )?;
         Ok(tree)
     }
 
@@ -247,6 +344,30 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                     .map(|&(ref prob, ref sub)| Ok((*prob, sub._translate_pk(translatefpk)?)))
                     .collect::<Result<Vec<(usize, Policy<Q>)>, E>>()?,
             )),
+        }
+    }
+
+    /// Translate `Semantic::Key(key)` to `Semantic::Unsatisfiable` when extracting TapKey
+    pub fn translate_unsatisfiable_pk(self, key: &Pk) -> Policy<Pk> {
+        match self {
+            Policy::Key(ref k) if k.clone() == *key => Policy::Unsatisfiable,
+            Policy::And(subs) => Policy::And(
+                subs.into_iter()
+                    .map(|sub| sub.translate_unsatisfiable_pk(key))
+                    .collect::<Vec<_>>(),
+            ),
+            Policy::Or(subs) => Policy::Or(
+                subs.into_iter()
+                    .map(|(k, sub)| (k, sub.translate_unsatisfiable_pk(key)))
+                    .collect::<Vec<_>>(),
+            ),
+            Policy::Threshold(k, subs) => Policy::Threshold(
+                k,
+                subs.into_iter()
+                    .map(|sub| sub.translate_unsatisfiable_pk(key))
+                    .collect::<Vec<_>>(),
+            ),
+            x => x,
         }
     }
 

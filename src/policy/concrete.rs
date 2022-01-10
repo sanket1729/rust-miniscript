@@ -26,14 +26,12 @@ use expression::{self, FromTree};
 use miniscript::limits::{HEIGHT_TIME_THRESHOLD, SEQUENCE_LOCKTIME_TYPE_FLAG};
 use miniscript::types::extra_props::TimeLockInfo;
 #[cfg(feature = "compiler")]
-use miniscript::ScriptContext;
-#[cfg(feature = "compiler")]
-use policy::compiler;
-#[cfg(feature = "compiler")]
-use policy::compiler::CompilerError;
-#[cfg(feature = "compiler")]
-use Miniscript;
+use {
+    descriptor::TapTree, miniscript::ScriptContext, policy::compiler,
+    policy::compiler::CompilerError, std::sync::Arc, Descriptor, Miniscript, Tap,
+};
 use {Error, ForEach, ForEachKey, MiniscriptKey};
+
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
 /// to assist the compiler
@@ -128,6 +126,30 @@ impl fmt::Display for PolicyError {
 }
 
 impl<Pk: MiniscriptKey> Policy<Pk> {
+    /// Single-Node compilation
+    #[cfg(feature = "compiler")]
+    fn compile_leaf_taptree(&self) -> Result<TapTree<Pk>, Error> {
+        let compilation = self.compile::<Tap>().unwrap();
+        Ok(TapTree::Leaf(Arc::new(compilation)))
+    }
+
+    /// Extract the Taproot internal_key from policy tree.
+    #[cfg(feature = "compiler")]
+    fn extract_key(&self, unspendable_key: Option<Pk>) -> Result<(Pk, &Policy<Pk>), Error> {
+        match unspendable_key {
+            Some(key) => Ok((key, self)),
+            None => Err(errstr("No internal key found")),
+        }
+    }
+
+    /// Compile the [`Tr`] descriptor into optimized [`TapTree`] implementation
+    #[cfg(feature = "compiler")]
+    pub fn compile_tr(&self, unspendable_key: Option<Pk>) -> Result<Descriptor<Pk>, Error> {
+        let (internal_key, policy) = self.extract_key(unspendable_key)?;
+        let tree = Descriptor::new_tr(internal_key, Some(policy.compile_leaf_taptree()?))?;
+        Ok(tree)
+    }
+
     /// Compile the descriptor into an optimized `Miniscript` representation
     #[cfg(feature = "compiler")]
     pub fn compile<Ctx: ScriptContext>(&self) -> Result<Miniscript<Pk, Ctx>, CompilerError> {

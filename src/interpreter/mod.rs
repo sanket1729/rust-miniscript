@@ -227,22 +227,24 @@ impl<'txin> Interpreter<'txin> {
         secp: &secp256k1::Secp256k1<C>,
         tx: &bitcoin::Transaction,
         input_idx: usize,
-        prevouts: &sighash::Prevouts,
+        prevouts: &sighash::Prevouts<&bitcoin::TxOut>,
         sig: &KeySigPair,
     ) -> bool {
-        fn get_prevout<'u>(
-            prevouts: &sighash::Prevouts<'u>,
+        fn get_prevout<'a>(
+            prevouts: &sighash::Prevouts<'a, &bitcoin::TxOut>,
             input_index: usize,
-        ) -> Option<&'u bitcoin::TxOut> {
+        ) -> Option<bitcoin::TxOut> {
             match prevouts {
                 sighash::Prevouts::One(index, prevout) => {
                     if input_index == *index {
-                        Some(prevout)
+                        Some((*prevout).clone())
                     } else {
                         None
                     }
                 }
-                sighash::Prevouts::All(prevouts) => prevouts.get(input_index),
+                sighash::Prevouts::All(prevouts) => {
+                    (*prevouts).get(input_index).map(|x| (*x).clone())
+                }
             }
         }
         let mut cache = bitcoin::util::sighash::SigHashCache::new(tx);
@@ -321,7 +323,7 @@ impl<'txin> Interpreter<'txin> {
         secp: &'iter secp256k1::Secp256k1<C>,
         tx: &'txin bitcoin::Transaction,
         input_idx: usize,
-        prevouts: &'iter sighash::Prevouts, // actually a 'prevouts, but 'prevouts: 'iter
+        prevouts: &'iter sighash::Prevouts<&bitcoin::TxOut>,
     ) -> Iter<'txin, 'iter> {
         self.iter_custom(Box::new(move |sig| {
             self.verify_sig(secp, tx, input_idx, prevouts, sig)

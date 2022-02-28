@@ -413,18 +413,16 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 for sub in subs {
                     match sub {
                         Policy::Trivial | Policy::Unsatisfiable => {}
-                        Policy::Threshold(1, or_subs) => {
-                            if is_or {
-                                ret_subs.extend(or_subs);
+                        Policy::Threshold(k, subs) => {
+                            if is_and && is_or {
+                                // means m = n = 1, thresh(1,X) type thing.
+                                ret_subs.push(Policy::Threshold(k, subs));
+                            } else if k == 1 && is_or {
+                                ret_subs.extend(subs)
+                            } else if k == subs.len() && is_and {
+                                ret_subs.extend(subs)
                             } else {
-                                ret_subs.push(Policy::Threshold(1, or_subs));
-                            }
-                        }
-                        Policy::Threshold(k, and_subs) => {
-                            if k == and_subs.len() && is_and {
-                                ret_subs.extend(and_subs)
-                            } else {
-                                ret_subs.push(Policy::Threshold(k, and_subs));
+                                ret_subs.push(Policy::Threshold(k, subs));
                             }
                         }
                         x => ret_subs.push(x),

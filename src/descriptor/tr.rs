@@ -205,10 +205,10 @@ impl<Pk: MiniscriptKey> Tr<Pk> {
         }
     }
 
-    // Compute the [`TaprootSpendInfo`] associated with this descriptor if spend data is [None]
-    // If spend data is already computed (i.e it is not None), this does not recompute it
-    // TaprootSpendInfo is only required for spending via the script paths.
-    fn spend_info(&self) -> Arc<TaprootSpendInfo>
+    /// Compute the [`TaprootSpendInfo`] associated with this descriptor if spend data is [None]
+    /// If spend data is already computed (i.e it is not None), this does not recompute it
+    /// TaprootSpendInfo is only required for spending via the script paths.
+    pub fn spend_info(&self) -> Arc<TaprootSpendInfo>
     where
         Pk: ToPublicKey,
     {

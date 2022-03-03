@@ -181,7 +181,7 @@ impl<Pk: MiniscriptKey> Liftable<Pk> for Descriptor<Pk> {
             Descriptor::Wpkh(ref wpkh) => wpkh.lift(),
             Descriptor::Wsh(ref wsh) => wsh.lift(),
             Descriptor::Sh(ref sh) => sh.lift(),
-            Descriptor::Tr(ref _tr) => unimplemented!(),
+            Descriptor::Tr(ref tr) => tr.lift(),
         }
     }
 }
@@ -449,8 +449,8 @@ mod tests {
             let descriptor = policy.compile_tr(Some(unspendable_key.clone())).unwrap();
 
             let mut sorted_policy_prob = node_policies
-                .into_iter()
-                .zip(node_probabilities.into_iter())
+                .iter()
+                .zip(node_probabilities.iter())
                 .collect::<Vec<_>>();
             sorted_policy_prob.sort_by(|a, b| (a.1).partial_cmp(&b.1).unwrap());
             let sorted_policies = sorted_policy_prob

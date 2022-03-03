@@ -200,6 +200,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
         let leaf_compilations: Vec<_> = self
             .to_tapleaf_prob_vec(1.0)
             .into_iter()
+            .filter(|x| x.1 != Policy::Unsatisfiable)
             .map(|(prob, ref policy)| (OrdF64(prob), compiler::best_compilation(policy).unwrap()))
             .collect();
         let taptree = Self::with_huffman_tree(leaf_compilations, |x| x).unwrap();
@@ -244,11 +245,12 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
             )),
             _ => {
                 let (internal_key, policy) = self.clone().extract_key(unspendable_key)?;
+                let tap_tree = policy.compile_tr_policy()?;
                 let tree = Descriptor::new_tr(
                     internal_key,
                     match policy {
                         Policy::Trivial => None,
-                        policy => Some(policy.compile_tr_policy()?),
+                        _ => Some(tap_tree),
                     },
                 )?;
                 Ok(tree)

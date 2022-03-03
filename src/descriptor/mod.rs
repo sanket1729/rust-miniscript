@@ -689,8 +689,13 @@ where
 
     fn from_str(s: &str) -> Result<Descriptor<Pk>, Error> {
         let desc_str = verify_checksum(s)?;
-        let top = expression::Tree::from_str(desc_str)?;
-        expression::FromTree::from_tree(&top)
+        match Tr::from_str(desc_str) {
+            Ok(s) => Ok(Descriptor::Tr(s)),
+            Err(_) => {
+                let top = expression::Tree::from_str(desc_str)?;
+                expression::FromTree::from_tree(&top)
+            }
+        }
     }
 }
 
@@ -1202,6 +1207,15 @@ mod tests {
             .to_string();
 
         assert_eq!(descriptor, "tr(,{pk(),pk()})#7dqr6v8r")
+    }
+
+    #[test]
+    fn tr_roundtrip_script2() {
+        let descriptor = Tr::<String>::from_str("tr(A,{pk(B),pk(C)})")
+            .unwrap()
+            .to_string();
+
+        dbg!(&descriptor);
     }
 
     #[test]

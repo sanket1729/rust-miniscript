@@ -844,6 +844,18 @@ where
                         None => return Some(Err(Error::UnexpectedStackEnd)),
                     }
                 }
+                Terminal::MultiA(ref _k, ref subs) => {
+                    if self.stack.len() < subs.len() {
+                        return Some(Err(Error::InsufficientSignaturesMultiSig));
+                    } else {
+                        for i in 0..subs.len() {
+                            let _sig = self.stack.pop().unwrap();
+                            let _pk = subs[i];
+                            // Implement verification here
+                        }
+                        self.stack.push(stack::Element::Satisfied);
+                    }
+                }
                 Terminal::Multi(ref k, ref subs) if node_state.n_evaluated == 0 => {
                     let len = self.stack.len();
                     if len < k + 1 {

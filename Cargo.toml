@@ -16,7 +16,7 @@ rand = ["bitcoin/rand"]
 
 [dependencies]
 # bitcoin = "0.27"
-bitcoin = "0.28.0-rc.1"
+bitcoin = {git = "https://github.com/rust-bitcoin/rust-bitcoin", rev = "efa9555ebdc78130b01a8a5ecd554ab922708622"}
 
 [dependencies.serde]
 version = "1.0"

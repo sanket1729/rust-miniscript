@@ -42,6 +42,14 @@ use crate::miniscript::types::extra_props::TimelockInfo;
 use crate::prelude::*;
 use crate::{errstr, Error, ForEach, ForEachKey, MiniscriptKey};
 
+/// [`TapTree`] -> ([`Policy`], satisfaction cost) cache
+#[cfg(feature = "compiler")]
+type PolicyTapCache<Pk> = BTreeMap<TapTree<Pk>, (Policy<Pk>, f64)>;
+
+/// [`Miniscript`] -> leaf probability in policy cache
+#[cfg(feature = "compiler")]
+type MsTapCache<Pk> = BTreeMap<TapTree<Pk>, f64>;
+
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
 /// to assist the compiler
@@ -276,6 +284,69 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                                 leaf_compilations.push((OrdF64(prob), compilation));
                             }
                             let taptree = with_huffman_tree::<Pk>(leaf_compilations)?;
+                            Some(taptree)
+                        }
+                    },
+                )?;
+                Ok(tree)
+            }
+        }
+    }
+
+    /// Compile [`Policy`] into a [`TapTree Descriptor`][`Descriptor::Tr`]
+    ///
+    ///
+    ///  This follows the heuristic as described in [`with_huffman_tree_eff`]
+    #[cfg(feature = "compiler")]
+    pub fn compile_tr(&self, unspendable_key: Option<Pk>) -> Result<Descriptor<Pk>, Error> {
+        self.is_valid()?; // Check for validity
+        match self.is_safe_nonmalleable() {
+            (false, _) => Err(Error::from(CompilerError::TopLevelNonSafe)),
+            (_, false) => Err(Error::from(
+                CompilerError::ImpossibleNonMalleableCompilation,
+            )),
+            _ => {
+                let (internal_key, policy) = self.clone().extract_key(unspendable_key)?;
+                let tree = Descriptor::new_tr(
+                    internal_key,
+                    match policy {
+                        Policy::Trivial => None,
+                        policy => {
+                            let mut policy_cache = PolicyTapCache::<Pk>::new();
+                            let mut ms_cache = MsTapCache::<Pk>::new();
+                            // Obtain the policy compilations and populate the respective caches for
+                            // creating the huffman tree later on
+                            let vec_policies: Vec<_> = policy.to_tapleaf_prob_vec(1.0);
+                            let mut leaf_compilations: Vec<Arc<Miniscript<Pk, Tap>>> = vec![];
+                            for (prob, pol) in vec_policies {
+                                // policy corresponding to the key (replaced by unsatisfiable) is skipped
+                                if pol == Policy::Unsatisfiable {
+                                    continue;
+                                }
+                                let compilation = compiler::best_compilation_sat::<Pk, Tap>(&pol)?;
+                                compilation.0.sanity_check()?;
+                                let leaf_comp = TapTree::Leaf(compilation.0.clone());
+                                policy_cache.insert(
+                                    TapTree::Leaf(Arc::clone(&compilation.0)),
+                                    (pol.clone(), compilation.1), // (policy, sat_cost)
+                                );
+                                // In case we hit duplication compilations for sub-policies, we add
+                                // their respective probabilities without pushing the node back again.
+                                match ms_cache.get(&leaf_comp) {
+                                    Some(p) => {
+                                        ms_cache.insert(leaf_comp, p + prob);
+                                    }
+                                    None => {
+                                        ms_cache.insert(leaf_comp, prob);
+                                        leaf_compilations.push(compilation.0);
+                                    }
+                                };
+                            }
+                            let taptree = with_huffman_tree_eff(
+                                leaf_compilations,
+                                &mut policy_cache,
+                                &mut ms_cache,
+                            )?;
                             Some(taptree)
                         }
                     },
@@ -827,6 +898,50 @@ where
     }
 }
 
+/// Average satisfaction cost for [`TapTree`] with the leaf [`Miniscript`] nodes at some depth having
+/// probabilities corresponding to the (sub)policies they're compiled from.
+///
+/// Average satisfaction cost for [`TapTree`] over script-spend paths is probability times
+/// the size of control block at depth + the script size.
+#[cfg(feature = "compiler")]
+fn at_depth_taptree_cost<Pk: MiniscriptKey>(
+    tr: &TapTree<Pk>,
+    ms_cache: &MsTapCache<Pk>,
+    policy_cache: &PolicyTapCache<Pk>,
+    depth: u32,
+) -> f64 {
+    match *tr {
+        TapTree::Tree(ref l, ref r) => {
+            at_depth_taptree_cost(l, ms_cache, policy_cache, depth + 1)
+                + at_depth_taptree_cost(r, ms_cache, policy_cache, depth + 1)
+        }
+        TapTree::Leaf(ref ms) => {
+            let prob = ms_cache
+                .get(&TapTree::Leaf(Arc::clone(ms)))
+                .expect("Probability should exist for the given ms");
+            let sat_cost = policy_cache
+                .get(&TapTree::Leaf(Arc::clone(ms)))
+                .expect("Cost should exist for the given ms")
+                .1;
+            prob * (ms.script_size() as f64 + sat_cost + 32.0 * depth as f64)
+        }
+    }
+}
+
+/// Average net satisfaction cost for [`TapTree`] with the leaf [`Miniscript`] nodes having
+/// probabilities corresponding to the (sub)policies they're compiled from.
+///
+/// Average satisfaction cost for [`TapTree`] over script-spend paths is probability times
+/// the size of control block  + the script size.
+#[cfg(feature = "compiler")]
+fn taptree_cost<Pk: MiniscriptKey>(
+    tr: &TapTree<Pk>,
+    ms_cache: &MsTapCache<Pk>,
+    policy_cache: &PolicyTapCache<Pk>,
+) -> f64 {
+    at_depth_taptree_cost(tr, ms_cache, policy_cache, 0)
+}
+
 /// Create a Huffman Tree from compiled [Miniscript] nodes
 #[cfg(feature = "compiler")]
 fn with_huffman_tree<Pk: MiniscriptKey>(
@@ -855,5 +970,126 @@ fn with_huffman_tree<Pk: MiniscriptKey>(
         .pop()
         .expect("huffman tree algorithm is broken")
         .1;
+    Ok(node)
+}
+
+/// Create a [`TapTree`] from the a list of [`Miniscript`]s having corresponding satisfaction
+/// cost and probability.
+///
+/// Given that satisfaction probability and cost for each script is known, constructing the
+/// [`TapTree`] as a huffman tree over the net cost (as defined in [`taptree_cost`]) is
+/// the optimal one.
+/// For finding the optimal policy to taptree compilation, we are required to search
+/// exhaustively over all policies which have the same leaf policies. Owing to the exponential
+/// blow-up for such a method, we use a heuristic where we augment the merge to check if the
+/// compilation of a new (sub)policy into a [`TapTree::Leaf`] with the policy corresponding to
+/// the nodes as children is better than [`TapTree::Tree`] with the nodes as children.
+///
+/// # Assumption
+///
+/// We have no two duplicate policies/ compilations in the given list.
+/// In any other case, we'd need to re-engineer the node-merging algorithm here to gracefully
+/// handle duplicate intermediate policies/ miniscript compilations by dis-disambiguating them.
+#[cfg(feature = "compiler")]
+fn with_huffman_tree_eff<Pk: MiniscriptKey>(
+    ms: Vec<Arc<Miniscript<Pk, Tap>>>,
+    policy_cache: &mut PolicyTapCache<Pk>,
+    ms_cache: &mut MsTapCache<Pk>,
+) -> Result<TapTree<Pk>, Error> {
+    let mut node_weights = BinaryHeap::<(Reverse<OrdF64>, OrdF64, TapTree<Pk>)>::new(); // (cost, branch_prob, tree)
+                                                                                        // Populate the heap with each `ms` as a TapLeaf, and the respective cost fields
+    for script in ms {
+        let wt = OrdF64(taptree_cost(
+            &TapTree::Leaf(Arc::clone(&script)),
+            ms_cache,
+            policy_cache,
+        ));
+        let prob = OrdF64(
+            *ms_cache
+                .get(&TapTree::Leaf(Arc::clone(&script)))
+                .expect("Probability should exist for the given ms"),
+        );
+        node_weights.push((Reverse(wt), prob, TapTree::Leaf(Arc::clone(&script))));
+    }
+    if node_weights.is_empty() {
+        return Err(errstr("Empty Miniscript compilation"));
+    }
+    while node_weights.len() > 1 {
+        // Obtain the two least-weighted nodes from the heap for merging
+        let (_prev_cost1, p1, ms1) = node_weights.pop().expect("len must atleast be two");
+        let (_prev_cost2, p2, ms2) = node_weights.pop().expect("len must atleast be two");
+
+        // Retrieve the respective policies
+        let (left_pol, _c1) = policy_cache
+            .get(&ms1)
+            .ok_or_else(|| errstr("No corresponding policy found"))?
+            .clone();
+
+        let (right_pol, _c2) = policy_cache
+            .get(&ms2)
+            .ok_or_else(|| errstr("No corresponding policy found"))?
+            .clone();
+
+        // Create a parent policy with the respective node TapTrees as children (with odds
+        // weighted approximately in ratio to their probabilities)
+        let parent_policy = Policy::Or(vec![
+            ((p1.0 * 1e4).round() as usize, left_pol),
+            ((p2.0 * 1e4).round() as usize, right_pol),
+        ]);
+
+        // Obtain compilation for the parent policy
+        let (parent_compilation, parent_sat_cost) =
+            compiler::best_compilation_sat::<Pk, Tap>(&parent_policy)?;
+
+        // Probability of the parent node being satisfied equals the probability of either
+        // nodes to be satisfied. Since we weight the odds appropriately, the children nodes
+        // still have approximately the same probabilities
+        let p = p1.0 + p2.0;
+        // Inserting parent policy's weights (sat_cost and probability) for later usage, assuming
+        // we don't hit duplicate policy/ compilation here.
+        ms_cache.insert(TapTree::Leaf(Arc::clone(&parent_compilation)), p);
+        policy_cache.insert(
+            TapTree::Leaf(Arc::clone(&parent_compilation)),
+            (parent_policy.clone(), parent_sat_cost),
+        );
+
+        let parent_cost = OrdF64(taptree_cost(
+            &TapTree::Leaf(Arc::clone(&parent_compilation)),
+            ms_cache,
+            policy_cache,
+        ));
+        let children_cost = OrdF64(
+            taptree_cost(&ms1, ms_cache, policy_cache) + taptree_cost(&ms2, ms_cache, policy_cache),
+        );
+
+        // Merge the children nodes into either TapLeaf of the parent compilation or TapTree
+        // children nodes accordingly. Note that in case the costs are same, we prefer to compile
+        // them to TapTree of children nodes considering privacy guarantees.
+        node_weights.push(
+            if parent_cost < children_cost && parent_compilation.sanity_check().is_ok() {
+                let node = TapTree::Leaf(Arc::from(parent_compilation));
+                (Reverse(parent_cost), OrdF64(p), node)
+            } else {
+                ms_cache.insert(
+                    TapTree::Tree(Arc::from(ms1.clone()), Arc::from(ms2.clone())),
+                    p,
+                );
+                policy_cache.insert(
+                    TapTree::Tree(Arc::from(ms1.clone()), Arc::from(ms2.clone())),
+                    (parent_policy, parent_sat_cost),
+                );
+                (
+                    Reverse(children_cost),
+                    OrdF64(p),
+                    TapTree::Tree(Arc::from(ms1), Arc::from(ms2)),
+                )
+            },
+        );
+    }
+    debug_assert!(node_weights.len() == 1);
+    let node = node_weights
+        .pop()
+        .expect("huffman tree algorithm is broken")
+        .2;
     Ok(node)
 }

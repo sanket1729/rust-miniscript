@@ -1140,6 +1140,20 @@ pub fn best_compilation<Pk: MiniscriptKey, Ctx: ScriptContext>(
     }
 }
 
+/// Obtain the best compilation of for p=1.0 and q=0, along with the satisfaction cost for the script
+pub(crate) fn best_compilation_sat<Pk: MiniscriptKey, Ctx: ScriptContext>(
+    policy: &Concrete<Pk>,
+) -> Result<(Arc<Miniscript<Pk, Ctx>>, f64), CompilerError> {
+    let mut policy_cache = PolicyCache::<Pk, Ctx>::new();
+    let x: AstElemExt<Pk, Ctx> = best_t(&mut policy_cache, policy, 1.0, None)?;
+    if !x.ms.ty.mall.safe {
+        Err(CompilerError::TopLevelNonSafe)
+    } else if !x.ms.ty.mall.non_malleable {
+        Err(CompilerError::ImpossibleNonMalleableCompilation)
+    } else {
+        Ok((x.ms, x.comp_ext_data.sat_cost))
+    }
+}
 /// Obtain the best B expression with given sat and dissat
 fn best_t<Pk, Ctx>(
     policy_cache: &mut PolicyCache<Pk, Ctx>,

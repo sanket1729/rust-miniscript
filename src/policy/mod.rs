@@ -237,6 +237,8 @@ mod tests {
     use super::super::miniscript::context::Segwitv0;
     use super::super::miniscript::Miniscript;
     use super::{Concrete, Liftable, Semantic};
+    #[cfg(feature = "compiler")]
+    use crate::descriptor::Tr;
     use crate::prelude::*;
     use crate::DummyKey;
     #[cfg(feature = "compiler")]
@@ -491,6 +493,33 @@ mod tests {
 
             let expected_descriptor = Descriptor::new_tr("E".to_string(), Some(tree)).unwrap();
             assert_eq!(descriptor, expected_descriptor);
+        }
+
+        // private and optimized compilation for a given policy
+        {
+            let policy = policy_str!(
+                "thresh(1,or(1@pk(A),1@pk(B)),or(1@pk(C),1@or(1@and(pk(E),pk(F)),1@pk(D))))"
+            );
+            let priv_desc = policy
+                .clone()
+                .compile_tr_private(Some(unspendable_key.clone()))
+                .unwrap();
+            let priv_expected_desc = Descriptor::Tr(
+                Tr::<String>::from_str("tr(A,{{and_v(v:pk(E),pk(F)),pk(D)},{pk(C),pk(B)}})")
+                    .unwrap(),
+            );
+
+            assert_eq!(priv_desc, priv_expected_desc);
+
+            let opt_desc = policy
+                .clone()
+                .compile_tr(Some(unspendable_key.clone()))
+                .unwrap();
+            let opt_expected_desc = Descriptor::Tr(
+                Tr::<String>::from_str("tr(A,{{pk(D),pk(C)},{pk(B),and_v(v:pk(E),pk(F))}})")
+                    .unwrap(),
+            );
+            assert_eq!(opt_desc, opt_expected_desc);
         }
     }
 }

@@ -487,4 +487,118 @@ mod tests {
             assert_eq!(descriptor, expected_descriptor);
         }
     }
+
+    #[test]
+    #[cfg(feature = "compiler")]
+    fn private_enumerative_compiler() {
+        // Trivial single-node compilation
+        let unspendable_key: String = "UNSPENDABLE".to_string();
+        {
+            let policy: Concrete<String> = policy_str!("thresh(2,pk(A),pk(B),pk(C),pk(D))");
+            let descriptor = policy
+                .compile_tr_private_experimental(Some(unspendable_key.clone()))
+                .unwrap();
+            let ms_compilations: [Miniscript<String, Tap>; 6] = [
+                ms_str!("multi_a(2,A,C)"),
+                ms_str!("multi_a(2,A,B)"),
+                ms_str!("multi_a(2,C,D)"),
+                ms_str!("multi_a(2,B,D)"),
+                ms_str!("multi_a(2,B,C)"),
+                ms_str!("multi_a(2,A,D)"),
+            ];
+
+            let tree = TapTree::Tree(
+                Arc::new(TapTree::Tree(
+                    Arc::new(TapTree::Leaf(Arc::new(ms_compilations[0].clone()))),
+                    Arc::new(TapTree::Leaf(Arc::new(ms_compilations[1].clone()))),
+                )),
+                Arc::new(TapTree::Tree(
+                    Arc::new(TapTree::Tree(
+                        Arc::new(TapTree::Leaf(Arc::new(ms_compilations[2].clone()))),
+                        Arc::new(TapTree::Leaf(Arc::new(ms_compilations[3].clone()))),
+                    )),
+                    Arc::new(TapTree::Tree(
+                        Arc::new(TapTree::Leaf(Arc::new(ms_compilations[4].clone()))),
+                        Arc::new(TapTree::Leaf(Arc::new(ms_compilations[5].clone()))),
+                    )),
+                )),
+            );
+
+            let expected_descriptor =
+                Descriptor::new_tr(unspendable_key.clone(), Some(tree)).unwrap();
+            assert_eq!(descriptor, expected_descriptor);
+        }
+
+        // Trivial multi-node compilation
+        {
+            let policy: Concrete<String> =
+                policy_str!("or(or(and(pk(A),pk(B)),and(pk(E),pk(F))),and(pk(C),pk(D)))");
+            let descriptor = policy
+                .compile_tr_private_experimental(Some(unspendable_key.clone()))
+                .unwrap();
+
+            let ms_compilations: [Miniscript<String, Tap>; 3] = [
+                ms_str!("and_v(v:pk(A),pk(B))"),
+                ms_str!("and_v(v:pk(E),pk(F))"),
+                ms_str!("and_v(v:pk(C),pk(D))"),
+            ];
+            let tree = TapTree::Tree(
+                Arc::new(TapTree::Leaf(Arc::new(ms_compilations[2].clone()))),
+                Arc::new(TapTree::Tree(
+                    Arc::new(TapTree::Leaf(Arc::new(ms_compilations[1].clone()))),
+                    Arc::new(TapTree::Leaf(Arc::new(ms_compilations[0].clone()))),
+                )),
+            );
+            let expected_descriptor =
+                Descriptor::new_tr(unspendable_key.clone(), Some(tree)).unwrap();
+            assert_eq!(descriptor, expected_descriptor);
+        }
+
+        {
+            let policy: Concrete<String> = policy_str!(
+                "or(or(and(pk(A),pk(B)),and(pk(E),pk(F))),thresh(1,and(pk(C),pk(D)),and(pk(G),pk(H))))"
+            );
+            let descriptor = policy
+                .compile_tr_private_experimental(Some(unspendable_key.clone()))
+                .unwrap();
+
+            let ms_compilations: [Miniscript<String, Tap>; 4] = [
+                ms_str!("and_v(v:pk(A),pk(B))"),
+                ms_str!("and_v(v:pk(C),pk(D))"),
+                ms_str!("and_v(v:pk(E),pk(F))"),
+                ms_str!("and_v(v:pk(G),pk(H))"),
+            ];
+            let tree = TapTree::Tree(
+                Arc::new(TapTree::Tree(
+                    Arc::new(TapTree::Leaf(Arc::new(ms_compilations[3].clone()))),
+                    Arc::new(TapTree::Leaf(Arc::new(ms_compilations[2].clone()))),
+                )),
+                Arc::new(TapTree::Tree(
+                    Arc::new(TapTree::Leaf(Arc::new(ms_compilations[1].clone()))),
+                    Arc::new(TapTree::Leaf(Arc::new(ms_compilations[0].clone()))),
+                )),
+            );
+            let expected_descriptor =
+                Descriptor::new_tr(unspendable_key.clone(), Some(tree)).unwrap();
+            assert_eq!(descriptor, expected_descriptor);
+        }
+
+        {
+            // Invalid policy compilation (Duplicate PubKeys)
+            let policy: Concrete<String> = policy_str!("or(and(pk(A),pk(B)),and(pk(A),pk(D)))");
+            let descriptor = policy.compile_tr_private_experimental(Some(unspendable_key.clone()));
+
+            assert_eq!(
+                descriptor.unwrap_err().to_string(),
+                "Policy contains duplicate keys"
+            );
+        }
+
+        {
+            let policy: Concrete<String> = policy_str!("thresh(51,pk(A),pk(B),pk(C),pk(D),pk(E),pk(F),pk(G),pk(H),pk(I),pk(J),pk(K),pk(L),pk(M),pk(N),pk(O),pk(P),pk(Q),pk(R),pk(S),pk(T),pk(U),pk(V),pk(W),pk(X),pk(Y),pk(Z),pk(AA),pk(BB),pk(CC),pk(DD),pk(EE),pk(FF),pk(GG),pk(HH),pk(II),pk(JJ),pk(KK),pk(LL),pk(MM),pk(NN),pk(OO),pk(PP),pk(QQ),pk(RR),pk(SS),pk(TT),pk(UU),pk(VV),pk(WW),pk(XX),pk(YY),pk(ZZ))");
+            let descriptor = dbg!(policy
+                .compile_tr_private_experimental(Some(unspendable_key.clone()))
+                .unwrap());
+        }
+    }
 }

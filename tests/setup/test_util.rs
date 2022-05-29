@@ -18,7 +18,6 @@
 //!
 
 use std::str::FromStr;
-use miniscript::Error;
 
 use actual_rand as rand;
 use bitcoin::hashes::hex::ToHex;
@@ -26,10 +25,9 @@ use bitcoin::hashes::{hash160, ripemd160, sha256, sha256d, Hash};
 use bitcoin::secp256k1;
 use miniscript::descriptor::{SinglePub, SinglePubKey};
 use miniscript::{
-    Descriptor, DescriptorPublicKey, Miniscript, ScriptContext, TranslatePk, Translator,
+    Descriptor, DescriptorPublicKey, Error, Miniscript, ScriptContext, TranslatePk, Translator,
 };
 use rand::RngCore;
-
 #[derive(Clone, Debug)]
 pub struct PubData {
     pub pks: Vec<bitcoin::PublicKey>,
@@ -249,7 +247,10 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
 
 #[allow(dead_code)]
 // https://github.com/rust-lang/rust/issues/46379. The code is pub fn and integration test, but still shows warnings
-pub fn parse_test_desc(desc: &str, pubdata: &PubData) -> Result<Descriptor<DescriptorPublicKey>, Error> {
+pub fn parse_test_desc(
+    desc: &str,
+    pubdata: &PubData,
+) -> Result<Descriptor<DescriptorPublicKey>, Error> {
     let desc = subs_hash_frag(desc, pubdata);
     let desc = Descriptor::<String>::from_str(&desc)?;
     let mut translator = StrDescPubKeyTranslator(0, pubdata);

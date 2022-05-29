@@ -18,8 +18,13 @@ use bitcoin::{
 use bitcoind::bitcoincore_rpc::{json, Client, RpcApi};
 use miniscript::miniscript::iter;
 use miniscript::psbt::{PsbtExt, PsbtInputExt};
-use miniscript::{Descriptor, Miniscript, MiniscriptKey, ScriptContext, ToPublicKey};
+use miniscript::{Descriptor, Miniscript, ToPublicKey};
+use miniscript::{MiniscriptKey, ScriptContext};
+use std::error;
+use std::fmt;
+use miniscript::Error;
 mod setup;
+// use crate::test_util::{self, TestData};
 
 use rand::RngCore;
 use setup::test_util::{self, TestData};
@@ -43,7 +48,31 @@ fn get_vout(cl: &Client, txid: Txid, value: u64, spk: Script) -> (OutPoint, TxOu
     unreachable!("Only call get vout on functions which have the expected outpoint");
 }
 
-pub fn test_desc_satisfy(cl: &Client, testdata: &TestData, desc: &str) -> Witness {
+// Currently this is not being used, since miniscript::Error is being propagated
+// But if the types of errors grow in future, we can extend this enum and use it.
+#[derive(Debug, PartialEq)]
+pub enum DescError {
+    /// PSBT was not able to finalize
+    PsbtFinalizeError,
+    InvalidDescriptor,
+}
+
+impl fmt::Display for DescError{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            DescError::PsbtFinalizeError => {
+                f.write_str("PSBT was not able to finalize")
+            },
+            DescError::InvalidDescriptor => {
+                f.write_str("Invalid descriptor")
+            }
+        }
+    }
+}
+
+impl error::Error for DescError {}
+
+pub fn test_desc_satisfy(cl: &Client, testdata: &TestData, descriptor: &str) -> Result<Witness, DescError> {
     let secp = secp256k1::Secp256k1::new();
     let sks = &testdata.secretdata.sks;
     let xonly_keypairs = &testdata.secretdata.x_only_keypairs;
@@ -55,12 +84,30 @@ pub fn test_desc_satisfy(cl: &Client, testdata: &TestData, desc: &str) -> Witnes
         .unwrap();
     assert_eq!(blocks.len(), 1);
 
-    let desc = test_util::parse_test_desc(&desc, &testdata.pubdata);
+    let mut desc;
+    let desc_res = test_util::parse_test_desc(&descriptor, &testdata.pubdata);
+    match desc_res {
+        Ok(temp_desc) => {
+            desc = temp_desc;
+        },
+        Err(_) => {
+            return Err(DescError::InvalidDescriptor);
+        }
+    }
     let derived_desc = desc.derived_descriptor(&secp, 0).unwrap();
     // Next send some btc to each address corresponding to the miniscript
+    let mut rest;
+    match derived_desc.address(bitcoin::Network::Regtest) {
+        Ok(addr) => {
+            rest = addr;
+        },
+        Err(_) => {
+            return Err(DescError::InvalidDescriptor);
+        }
+    }
     let txid = cl
         .send_to_address(
-            &derived_desc.address(bitcoin::Network::Regtest).unwrap(),
+            &rest,
             btc(1),
             None,
             None,
@@ -274,11 +321,7 @@ pub fn test_desc_satisfy(cl: &Client, testdata: &TestData, desc: &str) -> Witnes
     // Finalize the transaction using psbt
     // Let miniscript do it's magic!
     if let Err(e) = psbt.finalize_mut(&secp) {
-        // All miniscripts should satisfy
-        panic!(
-            "Could not satisfy non-malleably: error{} desc:{} ",
-            e[0], desc
-        );
+        return Err(DescError::PsbtFinalizeError);
     }
     let tx = psbt.extract(&secp).expect("Extraction error");
 
@@ -298,7 +341,7 @@ pub fn test_desc_satisfy(cl: &Client, testdata: &TestData, desc: &str) -> Witnes
     // Assert that the confirmations are > 0.
     let num_conf = cl.get_transaction(&txid, None).unwrap().info.confirmations;
     assert!(num_conf > 0);
-    tx.input[0].witness.clone()
+    return Ok(tx.input[0].witness.clone());
 }
 
 // Find all secret corresponding to the known public keys in ms
@@ -340,18 +383,18 @@ fn test_descs(cl: &Client, testdata: &TestData) {
     // X!: X-only key with corresponding secret key unknown
 
     // Test 1: Simple spend with internal key
-    let wit = test_desc_satisfy(cl, testdata, "tr(X)");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X)").unwrap();
     assert!(wit.len() == 1);
 
     // Test 2: Same as above, but with leaves
-    let wit = test_desc_satisfy(cl, testdata, "tr(X,{pk(X1!),pk(X2!)})");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X,{pk(X1!),pk(X2!)})").unwrap();
     assert!(wit.len() == 1);
 
     // Test 3: Force to spend with script spend. Unknown internal key and only one known script path
     // X! -> Internal key unknown
     // Leaf 1 -> pk(X1) with X1 known
     // Leaf 2-> and_v(v:pk(X2),pk(X3!)) with partial witness only to X2 known
-    let wit = test_desc_satisfy(cl, testdata, "tr(X!,{pk(X1),and_v(v:pk(X2),pk(X3!))})");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X!,{pk(X1),and_v(v:pk(X2),pk(X3!))})").unwrap();
     assert!(wit.len() == 3); // control block, script and signature
 
     // Test 4: Force to spend with script spend. Unknown internal key and multiple script paths
@@ -359,11 +402,11 @@ fn test_descs(cl: &Client, testdata: &TestData) {
     // X! -> Internal key unknown
     // Leaf 1 -> pk(X1!) with X1 unknown
     // Leaf 2-> and_v(v:pk(X2),pk(X3)) X2 and X3 known
-    let wit = test_desc_satisfy(cl, testdata, "tr(X!,{pk(X1),and_v(v:pk(X2),pk(X3))})");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X!,{pk(X1),and_v(v:pk(X2),pk(X3))})").unwrap();
     assert!(wit.len() == 3); // control block, script and one signatures
 
     // Test 5: When everything is available, we should select the key spend path
-    let wit = test_desc_satisfy(cl, testdata, "tr(X,{pk(X1),and_v(v:pk(X2),pk(X3!))})");
+    let wit = test_desc_satisfy(cl, testdata, "tr(X,{pk(X1),and_v(v:pk(X2),pk(X3!))})").unwrap();
     assert!(wit.len() == 1); // control block, script and signature
 
     // Test 6: Test the new multi_a opcodes

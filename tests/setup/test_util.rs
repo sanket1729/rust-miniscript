@@ -18,6 +18,7 @@
 //!
 
 use std::str::FromStr;
+use miniscript::Error;
 
 use actual_rand as rand;
 use bitcoin::hashes::hex::ToHex;
@@ -248,13 +249,12 @@ impl<'a> Translator<String, DescriptorPublicKey, ()> for StrTranslatorLoose<'a> 
 
 #[allow(dead_code)]
 // https://github.com/rust-lang/rust/issues/46379. The code is pub fn and integration test, but still shows warnings
-pub fn parse_test_desc(desc: &str, pubdata: &PubData) -> Descriptor<DescriptorPublicKey> {
+pub fn parse_test_desc(desc: &str, pubdata: &PubData) -> Result<Descriptor<DescriptorPublicKey>, Error> {
     let desc = subs_hash_frag(desc, pubdata);
-    let desc =
-        Descriptor::<String>::from_str(&desc).expect("only parsing valid and sane descriptors");
+    let desc = Descriptor::<String>::from_str(&desc)?;
     let mut translator = StrDescPubKeyTranslator(0, pubdata);
     let desc: Result<_, ()> = desc.translate_pk(&mut translator);
-    desc.expect("Translate must succeed")
+    Ok(desc.expect("Translate must succeed"))
 }
 
 // substitute hash fragments in the string as the per rules

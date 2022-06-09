@@ -331,16 +331,12 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                                     (pol.clone(), compilation.1), // (policy, sat_cost)
                                 );
                                 // In case we hit duplication compilations for sub-policies, we add
-                                // their respective probabilities without pushing the node back again.
-                                match ms_cache.get(&leaf_comp) {
-                                    Some(p) => {
-                                        ms_cache.insert(leaf_comp, p + prob);
-                                    }
-                                    None => {
-                                        ms_cache.insert(leaf_comp, prob);
-                                        leaf_compilations.push(compilation.0);
-                                    }
-                                };
+                                // their respective probabilities.
+                                // We only add the compilation to the leaf compilation only if there is no entry.
+                                *ms_cache.entry(leaf_comp).or_insert_with(|| {
+                                    leaf_compilations.push(compilation.0);
+                                    0.0
+                                }) += prob;
                             }
                             let taptree = with_huffman_tree_eff(
                                 leaf_compilations,

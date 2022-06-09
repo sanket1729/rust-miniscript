@@ -1129,15 +1129,8 @@ fn compile_tern<Pk: MiniscriptKey, Ctx: ScriptContext>(
 pub fn best_compilation<Pk: MiniscriptKey, Ctx: ScriptContext>(
     policy: &Concrete<Pk>,
 ) -> Result<Miniscript<Pk, Ctx>, CompilerError> {
-    let mut policy_cache = PolicyCache::<Pk, Ctx>::new();
-    let x = &*best_t(&mut policy_cache, policy, 1.0, None)?.ms;
-    if !x.ty.mall.safe {
-        Err(CompilerError::TopLevelNonSafe)
-    } else if !x.ty.mall.non_malleable {
-        Err(CompilerError::ImpossibleNonMalleableCompilation)
-    } else {
-        Ok(x.clone())
-    }
+    let (ms_ref, _cost) = best_compilation_sat(policy)?;
+    Ok((*ms_ref).clone())
 }
 
 /// Obtain the best compilation of for p=1.0 and q=0, along with the satisfaction cost for the script

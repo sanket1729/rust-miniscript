@@ -122,6 +122,26 @@ enum NonTerm {
     // could be or_i or tern
     EndIfElse,
 }
+
+#[derive(Debug, Clone, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub enum KeyExpr<Pk: MiniscriptKey> {
+    /// Single key without any musig combinations
+    SingleKey(Pk),
+    /// MuSig combination of keys
+    MuSig(Vec<Pk>),
+}
+
+impl<Pk: MiniscriptKey> KeyExpr<Pk> {
+    /// Handy shortcut to create [`KeyExpr`] from Pk
+    pub fn from_pk(pk: Pk) -> Self {
+        KeyExpr::SingleKey(pk)
+    }
+
+    pub fn from_musig(pks: Vec<Pk>) -> Self {
+        KeyExpr::MuSig(pks)
+    }
+}
+
 /// All AST elements
 #[allow(broken_intra_doc_links)]
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -132,7 +152,7 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     False,
     // pubkey checks
     /// `<key>`
-    PkK(Pk),
+    PkK(KeyExpr<Pk>),
     /// `DUP HASH160 <keyhash> EQUALVERIFY`
     PkH(Pk::Hash),
     // timelocks
@@ -298,12 +318,12 @@ pub fn parse<Ctx: ScriptContext>(
                     Tk::Bytes33(pk) => {
                         let ret = Ctx::Key::from_slice(pk)
                             .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
-                        term.reduce0(Terminal::PkK(ret))?
+                        term.reduce0(Terminal::PkK(KeyExpr::SingleKey(ret)))?
                     },
                     Tk::Bytes65(pk) => {
                         let ret = Ctx::Key::from_slice(pk)
                             .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
-                        term.reduce0(Terminal::PkK(ret))?
+                        term.reduce0(Terminal::PkK(KeyExpr::SingleKey(ret)))?
                     },
                     // Note this does not collide with hash32 because they always followed by equal
                     // and would be parsed in different branch. If we get a naked Bytes32, it must be
@@ -319,7 +339,7 @@ pub fn parse<Ctx: ScriptContext>(
                     // Finally for the first case, K being parsed as a solo expression is a Pk type
                     Tk::Bytes32(pk) => {
                         let ret = Ctx::Key::from_slice(pk).map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
-                        term.reduce0(Terminal::PkK(ret))?
+                        term.reduce0(Terminal::PkK(KeyExpr::SingleKey(ret)))?
                     },
                     // checksig
                     Tk::CheckSig => {

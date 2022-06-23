@@ -19,16 +19,20 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki`
 //!
 
-use super::{Descriptor, DescriptorTrait, MiniscriptKey, ToPublicKey};
-use bitcoin::blockdata::{opcodes, script::Builder};
+use std::convert::From;
+
+use bitcoin::blockdata::opcodes;
+use bitcoin::blockdata::script::Builder;
 use bitcoin::hashes::{
-    borrow_slice_impl, hex_fmt_impl, index_impl, serde_impl, sha256t_hash_newtype, Hash,
+    borrow_slice_impl, hash_newtype, hex_fmt_impl, index_impl, serde_impl, sha256t_hash_newtype,
+    Hash,
 };
-use bitcoin::secp256k1::{Secp256k1, Signature};
-use bitcoin::{OutPoint, PublicKey, SigHashType, Transaction, TxIn, TxOut};
+use bitcoin::secp256k1::ecdsa::Signature;
+use bitcoin::secp256k1::Secp256k1;
+use bitcoin::{EcdsaSighashType, OutPoint, PublicKey, Transaction, TxIn, TxOut};
 
 use super::interpreter::{Error as InterpreterError, Interpreter};
-use std::convert::From;
+use super::{Descriptor, MiniscriptKey, ToPublicKey};
 
 // BIP322 message tagged hash midstate
 const MIDSTATE: [u8; 32] = [
@@ -93,7 +97,7 @@ pub struct Bip322Validator<Pk: MiniscriptKey + ToPublicKey> {
 
     /// script_pubkey to define the challenge script inside to_spend transaction
     /// here we take in descriptors to derive the resulting script_pubkey
-    message_challenge: Descriptor<Pk>,
+    message_challenge: Descriptor<Pk>, // FIXME: Only scriptpubkey required, rename to script_pubkey
 
     /// Age
     age: u32,
@@ -115,8 +119,8 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
             message: msg,
             signature: sig,
             message_challenge: addr,
-            age: age,
-            height: height,
+            age,
+            height,
         }
     }
 
@@ -191,7 +195,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
                     // create empty to_sign transaction
                     let mut to_sign = self.empty_to_sign();
 
-                    to_sign.input[0].witness = witness.to_owned();
+                    to_sign.input[0].witness = bitcoin::Witness::from_vec(witness.to_owned());
 
                     self.tx_validation(&to_sign)
                 }
@@ -208,14 +212,14 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
                     let mut sig_ser = sig.serialize_der()[..].to_vec();
 
                     // By default SigHashType is ALL
-                    sig_ser.push(SigHashType::All as u8);
+                    sig_ser.push(EcdsaSighashType::All as u8);
 
                     let script_sig = Builder::new()
                         .push_slice(&sig_ser[..])
                         .push_key(&pubkey)
                         .into_script();
 
-                    let mut to_sign = self.empty_to_sign();
+                    let mut to_sign = self.empty_to_sign(); // `to_sign` single-handedly produces both the scripts hmm..., interesting
 
                     to_sign.input[0].script_sig = script_sig;
 
@@ -230,7 +234,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
         let secp = Secp256k1::new();
 
         // create an Interpreter to validate to_spend transaction
-        let mut interpreter = Interpreter::from_txdata(
+        let interpreter = Interpreter::from_txdata(
             &self.message_challenge.script_pubkey(),
             &to_sign.input[0].script_sig,
             &to_sign.input[0].witness,
@@ -239,11 +243,11 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
         )?;
 
         // create the signature verification function
-        let vfyfn = interpreter.sighash_verify(&secp, &to_sign, 0, 0);
+        // let vfyfn = interpreter.verify_ecdsa(&secp, &to_sign, 0, 0);
 
         let mut result = false;
 
-        for elem in interpreter.iter(vfyfn) {
+        for elem in interpreter.iter_assume_sigs() {
             match elem {
                 Ok(_) => result = true,
                 Err(e) => return Err(BIP322Error::ValidationError(e)),
@@ -256,13 +260,12 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use bitcoin::hashes::sha256t::Tag;
     use bitcoin::hashes::{sha256, HashEngine};
     use bitcoin::secp256k1::{Message, Secp256k1};
-    use bitcoin::util::bip143;
-    use bitcoin::PrivateKey;
-    use bitcoin::SigHashType;
+    use bitcoin::{EcdsaSighashType, PrivateKey};
+
+    use super::*;
 
     #[test]
     fn test_bip322_validation() {
@@ -290,7 +293,7 @@ mod test {
             let mut vout = TxOut::default();
 
             // calculate the message tagged hash
-            let msg_hash = MessageHash::hash(&message.as_bytes()).into_inner();
+            let msg_hash = MessageHash::hash(message.as_bytes()).into_inner();
 
             // mutate the input with appropriate script_sig and sequence
             vin.script_sig = Builder::new()
@@ -341,17 +344,18 @@ mod test {
         // Check BIP322Signature::FUll
 
         // Generate witness for above wpkh pubkey
-        let mut sighash_cache = bip143::SigHashCache::new(&empty_to_sign);
-        let message = sighash_cache.signature_hash(0, &p2pkh_script, 0, SigHashType::All.into());
-        let message = Message::from_slice(&message[..]).unwrap();
+        let mut sighash_cache = bitcoin::util::sighash::SighashCache::new(&empty_to_sign);
+        let message =
+            sighash_cache.segwit_signature_hash(0, &p2pkh_script, 0, EcdsaSighashType::All);
+        let message = Message::from_slice(&message.unwrap()).unwrap();
 
-        let signature = ctx.sign(&message, &sk.key);
+        let signature = ctx.sign_ecdsa(&message, &sk.inner);
         let der = signature.serialize_der();
         let mut sig_with_hash = der[..].to_vec();
-        sig_with_hash.push(SigHashType::All as u8);
+        sig_with_hash.push(EcdsaSighashType::All as u8);
 
         let witness: Vec<Vec<u8>> = vec![sig_with_hash, pk.to_bytes()];
-        empty_to_sign.input[0].witness = witness.clone();
+        empty_to_sign.input[0].witness = bitcoin::Witness::from_vec(witness.clone());
 
         let bip322_signature = Bip322Signature::Full(empty_to_sign);
 
@@ -389,9 +393,10 @@ mod test {
         let to_sign = bip322_3.empty_to_sign();
 
         // Compute SigHash and Signature
-        let message = to_sign.signature_hash(0, &desc.script_pubkey(), SigHashType::All as u32);
+        let message =
+            to_sign.signature_hash(0, &desc.script_pubkey(), EcdsaSighashType::All as u32);
         let message = Message::from_slice(&message[..]).unwrap();
-        let signature = ctx.sign(&message, &sk.key);
+        let signature = ctx.sign_ecdsa(&message, &sk.inner);
 
         // Create Bip322Signature::Legacy
         let bip322_sig = Bip322Signature::Legacy(signature, pk);

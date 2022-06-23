@@ -19,14 +19,16 @@
 //! `https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki`
 //!
 
+use std::collections::HashMap;
 use std::convert::From;
 
 use bitcoin::blockdata::opcodes;
 use bitcoin::blockdata::script::Builder;
 use bitcoin::hashes::{
-    borrow_slice_impl, hash_newtype, hex_fmt_impl, index_impl, serde_impl, sha256t_hash_newtype,
-    Hash,
+    borrow_slice_impl, hash_newtype, hex_fmt_impl, index_impl, serde_impl, sha256,
+    sha256t_hash_newtype, Hash,
 };
+use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{EcdsaSighashType, OutPoint, PublicKey, Transaction, TxIn, TxOut};
@@ -81,7 +83,65 @@ pub enum Bip322Signature {
 }
 
 /// TODO: Bip322 Signer structure
-pub struct Bip322Signer {}
+/// Update a Psbt with signatures required for signatures.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Bip322SignerSecrets {
+    // Descriptor with secret keys
+    desc: Descriptor<String>, // parse with secrets
+    // Preimages
+    sha256_preimages: HashMap<sha256::Hash, [u8; 32]>, // Similar maps for other hashes
+}
+
+/// Bip322 Signer that supports single and multiple Utxos
+pub struct Bip322Signer {
+    /// Age
+    pub age: u32,
+    /// Height
+    pub height: u32,
+    /// Script pubkey ->
+    pub spk_secrets_map: HashMap<bitcoin::Script, Bip322SignerSecrets>,
+}
+
+impl Bip322Signer {
+    /// Creates a signer for proving ownership of single funds
+    pub fn addr() -> Self {
+        todo!()
+    }
+
+    /// Creates a signer ...
+    pub fn new_proof_of_funds() -> Self {
+        todo!()
+    }
+
+    /// Look and infer the miniscript from txout/witness_script.
+    ///
+    /// # Returns:
+    ///
+    /// 1) Completed(Bip322Signature)
+    /// 2) Insufficient information to finalize. Pass onto the next signer
+    pub fn sign(&self, _psbt: &mut PartiallySignedTransaction, _msg: String) -> Result<(), ()> {
+        todo!("Sanity checks that the descriptor correctly derives the address");
+        // If the descriptor is BIP32 secret key, then we need to find the index corresponding to the wildcard
+        // Substitute the index and get the concrete descriptor
+
+        // Iterating over secrets (PublicKey -> SecretKey)
+        // PsbtExt::sighash_msg => (Ecdsa(sighash::Message), Schnorr(sighash::Message))
+        // 1) Ecdsa secp.sign_ecdsa
+        // 2) Schnorr: Check if we know the internal key. sign_key_spend
+        // 3) Schnorr script spend: sign_script_spend
+
+        // Try finalize if possible
+    }
+
+    /// Better name
+    pub fn finalize(&self, &psbt: &mut PartiallySignedTransaction) -> Result<Bip322Signature, ()> {
+        todo!();
+        // sign(sk, msg) -> sig
+        // verify(pk, msg, sig) -> 0/1
+    }
+}
+
+impl Bip322Signer {}
 
 /// BIP322 validator structure
 /// A standard for interoperable signed messages based on the Bitcoin Script format,
@@ -155,7 +215,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
 
     /// Create to_sign transaction
     /// This will create a transaction structure with empty signature and witness field
-    /// its up to the user of the library to fill the Tx with appropriate signature and witness  
+    /// its up to the user of the library to fill the Tx with appropriate signature and witness
     pub fn empty_to_sign(&self) -> Transaction {
         // create the appropriate input
         let outpoint = OutPoint::new(self.to_spend().txid(), 0);

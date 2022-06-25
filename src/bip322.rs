@@ -34,7 +34,7 @@ use bitcoin::secp256k1::Secp256k1;
 use bitcoin::{EcdsaSighashType, OutPoint, PublicKey, Transaction, TxIn, TxOut};
 
 use super::interpreter::{Error as InterpreterError, Interpreter};
-use super::{Descriptor, MiniscriptKey, ToPublicKey};
+use super::{hash256, Descriptor};
 
 // BIP322 message tagged hash midstate
 const MIDSTATE: [u8; 32] = [
@@ -98,7 +98,7 @@ pub struct Bip322Signer {
     pub age: u32,
     /// Height
     pub height: u32,
-    /// Script pubkey ->
+    /// Script pubkey -> Secrets
     pub spk_secrets_map: HashMap<bitcoin::Script, Bip322SignerSecrets>,
 }
 
@@ -134,7 +134,7 @@ impl Bip322Signer {
     }
 
     /// Better name
-    pub fn finalize(&self, &psbt: &mut PartiallySignedTransaction) -> Result<Bip322Signature, ()> {
+    pub fn finalize(&self, _psbt: &mut PartiallySignedTransaction) -> Result<Bip322Signature, ()> {
         todo!();
         // sign(sk, msg) -> sig
         // verify(pk, msg, sig) -> 0/1
@@ -148,7 +148,7 @@ impl Bip322Signer {}
 /// either for proving fund availability, or committing to a message as the intended
 /// recipient of funds sent to the invoice address.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Bip322Validator<Pk: MiniscriptKey + ToPublicKey> {
+pub struct Bip322Validator {
     /// Message to be signed
     message: String,
 
@@ -157,7 +157,7 @@ pub struct Bip322Validator<Pk: MiniscriptKey + ToPublicKey> {
 
     /// script_pubkey to define the challenge script inside to_spend transaction
     /// here we take in descriptors to derive the resulting script_pubkey
-    message_challenge: Descriptor<Pk>, // FIXME: Only scriptpubkey required, rename to script_pubkey
+    script_pubkey: bitcoin::Script,
 
     /// Age
     age: u32,
@@ -166,19 +166,19 @@ pub struct Bip322Validator<Pk: MiniscriptKey + ToPublicKey> {
     height: u32,
 }
 
-impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
+impl Bip322Validator {
     /// Create a new BIP322 validator
     pub fn new(
         msg: String,
         sig: Bip322Signature,
-        addr: Descriptor<Pk>,
+        addr: bitcoin::Script,
         age: u32,
         height: u32,
     ) -> Self {
         Bip322Validator {
             message: msg,
             signature: sig,
-            message_challenge: addr,
+            script_pubkey: addr,
             age,
             height,
         }
@@ -202,7 +202,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
 
         // mutate the value and script_pubkey as appropriate
         vout.value = 0;
-        vout.script_pubkey = self.message_challenge.script_pubkey();
+        vout.script_pubkey = self.script_pubkey.clone();
 
         // create and return final transaction
         Transaction {
@@ -249,7 +249,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
 
             // If Simple Signature is provided, the resulting `to_sign` Tx will be computed
             Bip322Signature::Simple(witness) => {
-                if !self.message_challenge.script_pubkey().is_witness_program() {
+                if !self.script_pubkey.is_witness_program() {
                     return Err(BIP322Error::InternalError("Simple style signature is only applicable for Segwit type message_challenge".to_string()));
                 } else {
                     // create empty to_sign transaction
@@ -263,7 +263,7 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
 
             // Legacy Signature can only be used to validate against P2PKH message_challenge
             Bip322Signature::Legacy(sig, pubkey) => {
-                if !self.message_challenge.script_pubkey().is_p2pkh() {
+                if !self.script_pubkey.is_p2pkh() {
                     return Err(BIP322Error::InternalError(
                         "Legacy style signature is only applicable for P2PKH message_challenge"
                             .to_string(),
@@ -291,11 +291,11 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Validator<Pk> {
 
     // Internal helper function to perform transaction validation
     fn tx_validation(&self, to_sign: &Transaction) -> Result<bool, BIP322Error> {
-        let secp = Secp256k1::new();
+        let _secp = Secp256k1::new();
 
         // create an Interpreter to validate to_spend transaction
         let interpreter = Interpreter::from_txdata(
-            &self.message_challenge.script_pubkey(),
+            &self.script_pubkey,
             &to_sign.input[0].script_sig,
             &to_sign.input[0].witness,
             0,
@@ -422,7 +422,7 @@ mod test {
         // Create BIP322 Validator
         let bip322_1 = Bip322Validator {
             message: "Hello World".to_string(),
-            message_challenge: desc.clone(),
+            script_pubkey: desc.script_pubkey(),
             signature: bip322_signature,
             age: 0,
             height: 0,
@@ -447,7 +447,7 @@ mod test {
         let desc = Descriptor::new_pkh(pk);
 
         // Replace previous message_challenge with p2pkh
-        bip322_3.message_challenge = desc.clone();
+        bip322_3.script_pubkey = desc.script_pubkey();
 
         // Create empty to_sign
         let to_sign = bip322_3.empty_to_sign();

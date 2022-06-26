@@ -31,6 +31,7 @@ use bitcoin::hashes::{
 use bitcoin::psbt::PartiallySignedTransaction;
 use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::Secp256k1;
+use bitcoin::util::sighash;
 use bitcoin::{EcdsaSighashType, OutPoint, PublicKey, Transaction, TxIn, TxOut};
 
 use super::interpreter::{Error as InterpreterError, Interpreter};
@@ -135,13 +136,9 @@ impl Bip322Signer {
 
     /// Better name
     pub fn finalize(&self, _psbt: &mut PartiallySignedTransaction) -> Result<Bip322Signature, ()> {
-        todo!();
-        // sign(sk, msg) -> sig
-        // verify(pk, msg, sig) -> 0/1
+        todo!()
     }
 }
-
-impl Bip322Signer {}
 
 /// BIP322 validator structure
 /// A standard for interoperable signed messages based on the Bitcoin Script format,
@@ -290,8 +287,12 @@ impl Bip322Validator {
     }
 
     // Internal helper function to perform transaction validation
+    // FIXME: Fix the function errors. Need to properly validate the transactions, using algorithm
+    // given in BIP322.
+    // - Validation of first transaction using first input of to_sign
+    // - Rest validation using out_transactions for secret_data of rest transactions
     fn tx_validation(&self, to_sign: &Transaction) -> Result<bool, BIP322Error> {
-        let _secp = Secp256k1::new();
+        let secp = Secp256k1::new();
 
         // create an Interpreter to validate to_spend transaction
         let interpreter = Interpreter::from_txdata(
@@ -302,12 +303,12 @@ impl Bip322Validator {
             0,
         )?;
 
-        // create the signature verification function
-        // let vfyfn = interpreter.verify_ecdsa(&secp, &to_sign, 0, 0);
+        let txout : &[TxOut] = &[to_sign.output[0].clone()];
+        let prevouts = sighash::Prevouts::<bitcoin::TxOut>::All(txout);
 
         let mut result = false;
 
-        for elem in interpreter.iter_assume_sigs() {
+        for elem in interpreter.iter(&secp, &to_sign, 0, &prevouts) {
             match elem {
                 Ok(_) => result = true,
                 Err(e) => return Err(BIP322Error::ValidationError(e)),

@@ -88,7 +88,7 @@
 #![deny(unused_mut)]
 #![deny(dead_code)]
 #![deny(unused_imports)]
-#![deny(missing_docs)]
+// #![deny(missing_docs)]
 
 pub use bitcoin;
 

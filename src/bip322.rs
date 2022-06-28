@@ -33,10 +33,11 @@ use bitcoin::secp256k1::ecdsa::Signature;
 use bitcoin::secp256k1::Secp256k1;
 use bitcoin::util::sighash;
 use bitcoin::{EcdsaSighashType, OutPoint, PublicKey, Transaction, TxIn, TxOut};
-use crate::{MiniscriptKey, ToPublicKey};
 
 use super::interpreter::{Error as InterpreterError, Interpreter};
 use super::{hash256, Descriptor};
+use crate::descriptor::DescriptorSecretKey;
+use crate::{MiniscriptKey, ToPublicKey};
 
 // BIP322 message tagged hash midstate
 const MIDSTATE: [u8; 32] = [
@@ -51,7 +52,7 @@ sha256t_hash_newtype!(
     MIDSTATE,
     64,
     doc = "BIP322 message tagged hash",
-    true
+    false
 );
 
 /// BIP322 Error types
@@ -87,9 +88,9 @@ pub enum Bip322Signature {
 /// TODO: Bip322 Signer structure
 /// Update a Psbt with signatures required for signatures.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Bip322SignerSecrets<Pk: MiniscriptKey + ToPublicKey> {
+pub struct Bip322SignerSecrets {
     // Descriptor with secret keys
-    desc: Descriptor<Pk>, // parse with secrets
+    desc: Vec<(String, Range<u32>)>, // parse with secrets
     // sha256 Preimages
     sha256_preimages: HashMap<sha256::Hash, [u8; 32]>,
     // hash256 preimages
@@ -104,15 +105,17 @@ pub struct Bip322SignerSecrets<Pk: MiniscriptKey + ToPublicKey> {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Bip322Signer<Pk: MiniscriptKey + ToPublicKey> {
     /// Age
-    pub age: u32,
-    /// Height
-    pub height: u32,
+    pub unsigned_to_spend: Transaction,
+    /// Spent txos
+    pub txos: Vec<TxOut>,
     /// Script pubkey -> Secrets
-    pub spk_secrets_map: HashMap<bitcoin::Script, Bip322SignerSecrets<Pk>>,
+    pub signer_secrets: Bip322SignerSecrets<Pk>,
 }
 
 impl<Pk: MiniscriptKey + ToPublicKey> Bip322Signer<Pk> {
     /// Creates a signer for proving ownership of single funds
+    /// Set the inputs as if you are spending them. Outpoints, sequence and locktime
+    /// must be set accordingly
     pub fn new(
         age: u32,
         height: u32,
@@ -139,7 +142,11 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Signer<Pk> {
     ///
     /// 1) Completed(Bip322Signature)
     /// 2) Insufficient information to finalize. Pass onto the next signer
-    pub fn sign_psbt(&self, _psbt: &mut PartiallySignedTransaction, _msg: String) -> Result<(Bip322Signature, bool), BIP322Error> {
+    pub fn sign_psbt(
+        &self,
+        _psbt: &mut PartiallySignedTransaction,
+        _msg: String,
+    ) -> Result<(Bip322Signature, bool), BIP322Error> {
         todo!("Sanity checks that the descriptor correctly derives the address")
 
         // If the descriptor is BIP32 secret key, then we need to find the index corresponding to the wildcard
@@ -155,7 +162,11 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Signer<Pk> {
     }
 
     /// Create a BIP322Signature from the signing data
-    pub fn finalize_psbt(&self, _psbt: &mut PartiallySignedTransaction, _msg: String) -> Result<Bip322Signature, ()> {
+    pub fn finalize_psbt(
+        &self,
+        _psbt: &mut PartiallySignedTransaction,
+        _msg: String,
+    ) -> Result<Bip322Signature, ()> {
         todo!()
         //Full are the only valid outputs
     }
@@ -167,15 +178,6 @@ impl<Pk: MiniscriptKey + ToPublicKey> Bip322Signer<Pk> {
 /// recipient of funds sent to the invoice address.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Bip322Validator {
-    /// Message to be signed
-    message: String,
-
-    /// Signature to verify the message
-    signature: Bip322Signature,
-
-    /// UTXOs to prove control of and/ or sign the message with
-    utxos: Vec<TxOut>,
-
     /// Age
     age: u32,
 
@@ -193,7 +195,9 @@ impl Bip322Validator {
         height: u32,
     ) -> Result<Self, BIP322Error> {
         if utxos.is_empty() {
-            return Err(BIP322Error::InternalError("atleast one utxo to prove control of should be provided".to_string()));
+            return Err(BIP322Error::InternalError(
+                "atleast one utxo to prove control of should be provided".to_string(),
+            ));
         }
         let mut utxos = utxos;
         utxos[0].value = 0; // The signing address A must have 0 value
@@ -238,7 +242,7 @@ impl Bip322Validator {
     /// Create to_sign transaction
     /// This will create a transaction structure with empty signature and witness field
     /// its up to the user of the library to fill the Tx with appropriate signature and witness
-    pub(crate) fn empty_to_sign(&self) -> Transaction {
+    pub(crate) fn empty_to_sign(&self, tx: &mut Transaction) {
         // create the appropriate input
         let outpoint = OutPoint::new(self.to_spend().txid(), 0);
         let mut input = TxIn::default();
@@ -264,7 +268,13 @@ impl Bip322Validator {
 
     /// Validate a BIP322 Signature against the message and challenge script
     /// This will require a BIP322Signature inside the structure
-    pub fn validate(&self) -> Result<bool, BIP322Error> {
+    pub fn verify(
+        &self,
+        msg: String,
+        sig: Bip322Signature,
+        age: u32,
+        height: u32,
+    ) -> Result<bool, BIP322Error> {
         match &self.signature {
             // A Full signature can be validated directly against the `to_sign` transaction
             Bip322Signature::Full(to_sign) => self.tx_validation(to_sign),
@@ -326,7 +336,7 @@ impl Bip322Validator {
             self.height,
         )?;
 
-        let txout : &Vec<TxOut> = &self.utxos;
+        let txout: &Vec<TxOut> = &self.utxos;
         let prevouts = sighash::Prevouts::<TxOut>::All(txout);
 
         let mut result = false;
@@ -449,7 +459,10 @@ mod test {
         // Create BIP322 Validator
         let bip322_1 = Bip322Validator {
             message: "Hello World".to_string(),
-            utxos: vec![TxOut {value: 0, script_pubkey: desc.script_pubkey()}],
+            utxos: vec![TxOut {
+                value: 0,
+                script_pubkey: desc.script_pubkey(),
+            }],
             signature: bip322_signature,
             age: 0,
             height: 0,
@@ -474,7 +487,10 @@ mod test {
         let desc = Descriptor::new_pkh(pk);
 
         // Replace previous message_challenge with p2pkh
-        bip322_3.utxos = vec![TxOut {value: 0, script_pubkey: desc.script_pubkey()}];
+        bip322_3.utxos = vec![TxOut {
+            value: 0,
+            script_pubkey: desc.script_pubkey(),
+        }];
 
         // Create empty to_sign
         let to_sign = bip322_3.empty_to_sign();

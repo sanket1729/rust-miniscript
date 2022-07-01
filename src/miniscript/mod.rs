@@ -41,6 +41,7 @@ pub mod hash256;
 pub mod iter;
 pub mod lex;
 pub mod limits;
+pub mod musig_key;
 pub mod satisfy;
 pub mod types;
 

@@ -40,6 +40,35 @@ impl<Pk: MiniscriptKey + FromStr> FromStr for KeyExpr<Pk> {
     }
 }
 
+#[derive(Debug, Clone)]
+/// Iterator for keyexpr
+pub struct KeyExprIter<'a, Pk: MiniscriptKey> {
+    stack: Vec<&'a KeyExpr<Pk>>,
+}
+
+impl<'a, Pk> Iterator for KeyExprIter<'a, Pk>
+where
+    Pk: MiniscriptKey + 'a,
+{
+    type Item = &'a Pk;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while !self.stack.is_empty() {
+            let last = self.stack.pop().expect("Size checked above");
+            match &*last {
+                KeyExpr::MuSig(key_vec) => {
+                    // push the elements in reverse order
+                    for key in key_vec.iter().rev() {
+                        self.stack.push(key)
+                    }
+                }
+                KeyExpr::SingleKey(ref pk) => return Some(pk),
+            }
+        }
+        None
+    }
+}
+
 impl<Pk: MiniscriptKey> fmt::Debug for KeyExpr<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -79,6 +108,14 @@ impl<Pk: MiniscriptKey> fmt::Display for KeyExpr<Pk> {
         }
     }
 }
+
+impl<Pk: MiniscriptKey> KeyExpr<Pk> {
+    /// Iterate over all keys
+    pub fn iter(&self) -> KeyExprIter<Pk> {
+        KeyExprIter { stack: vec![self] }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,5 +133,17 @@ mod tests {
         test_one("musig(A)");
         test_one("A");
         test_one("musig(,,)");
+    }
+
+    #[test]
+    fn test_iterator() {
+        let pk = KeyExpr::<String>::from_str("musig(A,B,musig(C,musig(D,E)))").unwrap();
+        let mut my_iter = pk.iter();
+        assert_eq!(my_iter.next(), Some(&String::from("A")));
+        assert_eq!(my_iter.next(), Some(&String::from("B")));
+        assert_eq!(my_iter.next(), Some(&String::from("C")));
+        assert_eq!(my_iter.next(), Some(&String::from("D")));
+        assert_eq!(my_iter.next(), Some(&String::from("E")));
+        assert_eq!(my_iter.next(), None);
     }
 }

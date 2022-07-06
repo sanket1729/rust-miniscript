@@ -414,7 +414,7 @@ pub trait Property: Sized {
             Terminal::False => Ok(Self::from_false()),
             Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
             Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h::<Ctx>()),
-            Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
+            Terminal::Multi(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {
                         fragment: fragment.clone(),
@@ -432,6 +432,9 @@ pub trait Property: Sized {
                     Terminal::MultiA(..) => Ok(Self::from_multi_a(k, pks.len())),
                     _ => unreachable!(),
                 }
+            }
+            Terminal::MultiA(k, ref pks) => {
+                todo!("Write the same logic as above here")
             }
             Terminal::After(t) => {
                 // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
@@ -797,7 +800,7 @@ impl Property for Type {
             Terminal::False => Ok(Self::from_false()),
             Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
             Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h::<Ctx>()),
-            Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
+            Terminal::Multi(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {
                         fragment: fragment.clone(),
@@ -816,6 +819,7 @@ impl Property for Type {
                     _ => unreachable!(),
                 }
             }
+            Terminal::MultiA(k, ref pks) => todo!("logic in separate match arm"),
             Terminal::After(t) => {
                 // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
                 // number on the stack would be a 5 bytes signed integer but Miniscript's B type

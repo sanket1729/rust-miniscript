@@ -80,7 +80,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
         Pk::RawPkHash: 'a,
     {
         match *self {
-            Terminal::PkK(ref p) => pred(p),
+            Terminal::PkK(ref p) => todo!("Implement ForEachKey for KeyExpr too and call it here"),
             Terminal::PkH(ref p) => pred(p),
             Terminal::RawPkH(..)
             | Terminal::After(..)
@@ -112,8 +112,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     && c.real_for_each_key(pred)
             }
             Terminal::Thresh(_, ref subs) => subs.iter().all(|sub| sub.real_for_each_key(pred)),
-            Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => {
-                keys.iter().all(|key| pred(key))
+            Terminal::Multi(_, ref keys) => keys.iter().all(|key| pred(key)),
+            Terminal::MultiA(_, ref keys) => {
+                todo!("For each logic here");
             }
         }
     }
@@ -125,7 +126,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
         T: Translator<Pk, Q, E>,
     {
         let frag: Terminal<Q, CtxQ> = match *self {
-            Terminal::PkK(ref p) => Terminal::PkK(t.pk(p)?),
+            Terminal::PkK(ref p) => todo!("Translation should translate all Pks here"), // Terminal::PkK(t.pk(p)?),
             Terminal::PkH(ref p) => Terminal::PkH(t.pk(p)?),
             Terminal::RawPkH(ref p) => Terminal::RawPkH(t.pkh(p)?),
             Terminal::After(n) => Terminal::After(n),
@@ -186,8 +187,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                 Terminal::Multi(k, keys?)
             }
             Terminal::MultiA(k, ref keys) => {
-                let keys: Result<Vec<Q>, _> = keys.iter().map(|k| t.pk(k)).collect();
-                Terminal::MultiA(k, keys?)
+                todo!("Similarly translation should translate all Pks here");
+                // let keys: Result<Vec<Q>, _> = keys.iter().map(|k| t.pk(k)).collect();
+                // Terminal::MultiA(k, keys?)
             }
         };
         Ok(frag)
@@ -455,7 +457,8 @@ impl_from_tree!(
         }
         let mut unwrapped = match (frag_name, top.args.len()) {
             ("pk_k", 1) => {
-                expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkK))
+                todo!("Parse a Musig here");
+                // expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkK))
             }
             ("pk_h", 1) => expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH)),
             ("after", 1) => expression::terminal(&top.args[0], |x| {
@@ -531,7 +534,8 @@ impl_from_tree!(
                     pks.map(|pks| Terminal::Multi(k, pks))
                 } else {
                     // must be multi_a
-                    pks.map(|pks| Terminal::MultiA(k, pks))
+                    todo!("Parse musig exprs here");
+                    // pks.map(|pks| Terminal::MultiA(k, pks))
                 }
             }
             _ => Err(Error::Unexpected(format!(
@@ -608,7 +612,9 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
         Pk: ToPublicKey,
     {
         match *self {
-            Terminal::PkK(ref pk) => builder.push_ms_key::<_, Ctx>(pk),
+            Terminal::PkK(ref pk) => {
+                todo!("as discussed on call, only push the aggregate key here")
+            } // builder.push_ms_key::<_, Ctx>(pk),
             Terminal::PkH(ref pk) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
@@ -731,12 +737,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::MultiA(k, ref keys) => {
                 debug_assert!(Ctx::sig_type() == SigType::Schnorr);
                 // keys must be atleast len 1 here, guaranteed by typing rules
-                builder = builder.push_ms_key::<_, Ctx>(&keys[0]);
-                builder = builder.push_opcode(opcodes::all::OP_CHECKSIG);
-                for pk in keys.iter().skip(1) {
-                    builder = builder.push_ms_key::<_, Ctx>(pk);
-                    builder = builder.push_opcode(opcodes::all::OP_CHECKSIGADD);
-                }
+                todo!("Push the aggregate keys here");
+                // builder = builder.push_ms_key::<_, Ctx>(&keys[0]);
+                // builder = builder.push_opcode(opcodes::all::OP_CHECKSIG);
+                // for pk in keys.iter().skip(1) {
+                //     builder = builder.push_ms_key::<_, Ctx>(pk);
+                //     builder = builder.push_opcode(opcodes::all::OP_CHECKSIGADD);
+                // }
                 builder
                     .push_int(k as i64)
                     .push_opcode(opcodes::all::OP_NUMEQUAL)
@@ -753,7 +760,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
     /// will handle the segwit/non-segwit technicalities for you.
     pub fn script_size(&self) -> usize {
         match *self {
-            Terminal::PkK(ref pk) => Ctx::pk_len(pk),
+            Terminal::PkK(ref pk) => todo!("Update pk len when keyexpr::musig to have 32 len"), // Ctx::pk_len(pk),
             Terminal::PkH(..) | Terminal::RawPkH(..) => 24,
             Terminal::After(n) => script_num_size(n as usize) + 1,
             Terminal::Older(n) => script_num_size(n as usize) + 1,
@@ -796,10 +803,11 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     + pks.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>()
             }
             Terminal::MultiA(k, ref pks) => {
-                script_num_size(k)
-                    + 1 // NUMEQUAL
-                    + pks.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>() // n keys
-                    + pks.len() // n times CHECKSIGADD
+                todo!("Update the Ctx::pk_len API here ");
+                // script_num_size(k)
+                //     + 1 // NUMEQUAL
+                // + pks.iter().map(|pk| Ctx::pk_len(pk)).sum::<usize>() // n keys
+                // + pks.len() // n times CHECKSIGADD
             }
         }
     }

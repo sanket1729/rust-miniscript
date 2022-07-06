@@ -180,8 +180,10 @@ impl<Pk: MiniscriptKey> Descriptor<Pk> {
         // roundabout way to constuct `c:pk_k(pk)`
         let ms: Miniscript<Pk, BareCtx> =
             Miniscript::from_ast(miniscript::decode::Terminal::Check(Arc::new(
-                Miniscript::from_ast(miniscript::decode::Terminal::PkK(pk))
-                    .expect("Type check cannot fail"),
+                Miniscript::from_ast(miniscript::decode::Terminal::PkK(todo!(
+                    "Create a single key here"
+                )))
+                .expect("Type check cannot fail"),
             )))
             .expect("Type check cannot fail");
         Descriptor::Bare(Bare::new(ms).expect("Context checks cannot fail for p2pk"))

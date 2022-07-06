@@ -384,12 +384,13 @@ impl ScriptContext for Legacy {
         }
 
         match ms.node {
-            Terminal::PkK(ref key) if key.is_x_only_key() => {
-                return Err(ScriptContextError::XOnlyKeysNotAllowed(
-                    key.to_string(),
-                    Self::name_str(),
-                ))
-            }
+            Terminal::PkK(ref key) => todo!("Check that Musig frag is only used in Tap and not anywhere else. Keep existing logic everywhere else"),
+            // Terminal::PkK(ref key) if key.is_x_only_key() => {
+            //     return Err(ScriptContextError::XOnlyKeysNotAllowed(
+            //         key.to_string(),
+            //         Self::name_str(),
+            //     ))
+            // }
             Terminal::Multi(_k, ref pks) => {
                 if pks.len() > MAX_PUBKEYS_PER_MULTISIG {
                     return Err(ScriptContextError::CheckMultiSigLimitExceeded);
@@ -490,17 +491,18 @@ impl ScriptContext for Segwitv0 {
         }
 
         match ms.node {
-            Terminal::PkK(ref pk) => {
-                if pk.is_uncompressed() {
-                    return Err(ScriptContextError::CompressedOnly(pk.to_string()));
-                } else if pk.is_x_only_key() {
-                    return Err(ScriptContextError::XOnlyKeysNotAllowed(
-                        pk.to_string(),
-                        Self::name_str(),
-                    ));
-                }
-                Ok(())
-            }
+            Terminal::PkK(ref key) => todo!("Check that Musig frag is only used in Tap and not anywhere else. Keep existing logic everywhere else"),
+            // Terminal::PkK(ref pk) => {
+            //     if pk.is_uncompressed() {
+            //         return Err(ScriptContextError::CompressedOnly(pk.to_string()));
+            //     } else if pk.is_x_only_key() {
+            //         return Err(ScriptContextError::XOnlyKeysNotAllowed(
+            //             pk.to_string(),
+            //             Self::name_str(),
+            //         ));
+            //     }
+            //     Ok(())
+            // }
             Terminal::Multi(_k, ref pks) => {
                 if pks.len() > MAX_PUBKEYS_PER_MULTISIG {
                     return Err(ScriptContextError::CheckMultiSigLimitExceeded);
@@ -618,12 +620,13 @@ impl ScriptContext for Tap {
         }
 
         match ms.node {
-            Terminal::PkK(ref pk) => {
-                if pk.is_uncompressed() {
-                    return Err(ScriptContextError::UncompressedKeysNotAllowed);
-                }
-                Ok(())
-            }
+            Terminal::PkK(ref key) => todo!("Check that Musig frag is only used in Tap and not anywhere else. Keep existing logic everywhere else"),
+            // Terminal::PkK(ref pk) => {
+            //     if pk.is_uncompressed() {
+            //         return Err(ScriptContextError::UncompressedKeysNotAllowed);
+            //     }
+            //     Ok(())
+            // }
             Terminal::Multi(..) => Err(ScriptContextError::TaprootMultiDisabled),
             _ => Ok(()),
         }
@@ -712,12 +715,13 @@ impl ScriptContext for BareCtx {
             return Err(ScriptContextError::MaxWitnessScriptSizeExceeded);
         }
         match ms.node {
-            Terminal::PkK(ref key) if key.is_x_only_key() => {
-                return Err(ScriptContextError::XOnlyKeysNotAllowed(
-                    key.to_string(),
-                    Self::name_str(),
-                ))
-            }
+            Terminal::PkK(ref key) => todo!("Check that Musig frag is only used in Tap and not anywhere else. Keep existing logic everywhere else"),
+            // Terminal::PkK(ref key) if key.is_x_only_key() => {
+            //     return Err(ScriptContextError::XOnlyKeysNotAllowed(
+            //         key.to_string(),
+            //         Self::name_str(),
+            //     ))
+            // }
             Terminal::Multi(_k, ref pks) => {
                 if pks.len() > MAX_PUBKEYS_PER_MULTISIG {
                     return Err(ScriptContextError::CheckMultiSigLimitExceeded);
@@ -751,11 +755,12 @@ impl ScriptContext for BareCtx {
 
     fn other_top_level_checks<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Result<(), Error> {
         match &ms.node {
-            Terminal::Check(ref ms) => match &ms.node {
-                Terminal::RawPkH(_pkh) => Ok(()),
-                Terminal::PkK(_pk) | Terminal::PkH(_pk) => Ok(()),
-                _ => Err(Error::NonStandardBareScript),
-            },
+            Terminal::Check(ref ms) => todo!("Check that Musig frag is only used in Tap and not anywhere else. Keep existing logic everywhere else"),
+            // Terminal::Check(ref ms) => match &ms.node {
+            //     Terminal::RawPkH(_pkh) => Ok(()),
+            //     Terminal::PkK(_pk) | Terminal::PkH(_pk) => Ok(()),
+            //     _ => Err(Error::NonStandardBareScript),
+            // },
             Terminal::Multi(_k, subs) if subs.len() <= 3 => Ok(()),
             _ => Err(Error::NonStandardBareScript),
         }

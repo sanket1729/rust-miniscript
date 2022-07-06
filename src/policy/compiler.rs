@@ -841,7 +841,8 @@ where
         }
         Concrete::Key(ref pk) => {
             insert_wrap!(AstElemExt::terminal(Terminal::PkH(pk.clone())));
-            insert_wrap!(AstElemExt::terminal(Terminal::PkK(pk.clone())));
+            // insert_wrap!(AstElemExt::terminal(Terminal::PkK(pk.clone())));
+            todo!("Use the single key variant here")
         }
         Concrete::After(n) => insert_wrap!(AstElemExt::terminal(Terminal::After(n))),
         Concrete::Older(n) => insert_wrap!(AstElemExt::terminal(Terminal::Older(n))),
@@ -1032,7 +1033,8 @@ where
 
             match Ctx::sig_type() {
                 SigType::Schnorr if key_vec.len() == subs.len() => {
-                    insert_wrap!(AstElemExt::terminal(Terminal::MultiA(k, key_vec)))
+                    // insert_wrap!(AstElemExt::terminal(Terminal::MultiA(k, key_vec)))
+                    todo!("Insert a single key vec for now. This is an interesting part that will tackle later")
                 }
                 SigType::Ecdsa
                     if key_vec.len() == subs.len() && subs.len() <= MAX_PUBKEYS_PER_MULTISIG =>

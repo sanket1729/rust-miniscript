@@ -911,7 +911,7 @@ impl Property for ExtData {
             Terminal::False => Ok(Self::from_false()),
             Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
             Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h::<Ctx>()),
-            Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
+            Terminal::Multi(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {
                         fragment: fragment.clone(),
@@ -930,6 +930,7 @@ impl Property for ExtData {
                     _ => unreachable!(),
                 }
             }
+            Terminal::MultiA(k, ref pks) => todo!("Write the same logic here"),
             Terminal::After(t) => {
                 // Note that for CLTV this is a limitation not of Bitcoin but Miniscript. The
                 // number on the stack would be a 5 bytes signed integer but Miniscript's B type

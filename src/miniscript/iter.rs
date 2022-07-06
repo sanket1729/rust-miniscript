@@ -124,11 +124,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     /// To obtain a list of all public keys within AST use [Miniscript::iter_pk()] function, for example
     /// `miniscript.iter_pubkeys().collect()`.
     pub fn get_leapk(&self) -> Vec<Pk> {
-        match self.node {
-            Terminal::PkK(ref key) | Terminal::PkH(ref key) => vec![key.clone()],
-            Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => keys.clone(),
-            _ => vec![],
-        }
+        todo!("Consider musig as a leaf pk too. This is not useful, in a separate commit we will remove this too");
+        // match self.node {
+        //     Terminal::PkK(ref key) | Terminal::PkH(ref key) => vec![key.clone()],
+        //     Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => keys.clone(),
+        //     _ => vec![],
+        // }
     }
 
     /// Returns `Vec` with hashes of all public keys from the current miniscript item, if any.
@@ -141,14 +142,15 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     /// To obtain a list of all public key hashes within AST use [Miniscript::iter_pkh()] function,
     /// for example `miniscript.iter_pubkey_hashes().collect()`.
     pub fn get_leapkh(&self) -> Vec<Pk::RawPkHash> {
-        match self.node {
-            Terminal::RawPkH(ref hash) => vec![hash.clone()],
-            Terminal::PkK(ref key) | Terminal::PkH(ref key) => vec![key.to_pubkeyhash()],
-            Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => {
-                keys.iter().map(Pk::to_pubkeyhash).collect()
-            }
-            _ => vec![],
-        }
+        todo!("Consider musig as a leaf pkh too. This is not useful, in a separate commit we will remove this too");
+        // match self.node {
+        //     Terminal::RawPkH(ref hash) => vec![hash.clone()],
+        //     Terminal::PkK(ref key) | Terminal::PkH(ref key) => vec![key.to_pubkeyhash()],
+        //     Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => {
+        //         keys.iter().map(Pk::to_pubkeyhash).collect()
+        //     }
+        //     _ => vec![],
+        // }
     }
 
     /// Returns `Vec` of [PkPkh] entries, representing either public keys or public key
@@ -159,17 +161,18 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     /// To obtain a list of all public keys or hashes within AST use [Miniscript::iter_pk_pkh()]
     /// function, for example `miniscript.iter_pubkeys_and_hashes().collect()`.
     pub fn get_leapk_pkh(&self) -> Vec<PkPkh<Pk>> {
-        match self.node {
-            Terminal::RawPkH(ref hash) => vec![PkPkh::HashedPubkey(hash.clone())],
-            Terminal::PkH(ref key) | Terminal::PkK(ref key) => {
-                vec![PkPkh::PlainPubkey(key.clone())]
-            }
-            Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => keys
-                .iter()
-                .map(|key| PkPkh::PlainPubkey(key.clone()))
-                .collect(),
-            _ => vec![],
-        }
+        todo!("Update to consider musig");
+        // match self.node {
+        //     Terminal::RawPkH(ref hash) => vec![PkPkh::HashedPubkey(hash.clone())],
+        //     Terminal::PkH(ref key) | Terminal::PkK(ref key) => {
+        //         vec![PkPkh::PlainPubkey(key.clone())]
+        //     }
+        //     Terminal::Multi(_, ref keys) | Terminal::MultiA(_, ref keys) => keys
+        //         .iter()
+        //         .map(|key| PkPkh::PlainPubkey(key.clone()))
+        //         .collect(),
+        //     _ => vec![],
+        // }
     }
 
     /// Returns `Option::Some` with cloned n'th public key from the current miniscript item,
@@ -177,13 +180,14 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     ///
     /// NB: The function analyzes only single miniscript item and not any of its descendants in AST.
     pub fn get_nth_pk(&self, n: usize) -> Option<Pk> {
-        match (&self.node, n) {
-            (&Terminal::PkK(ref key), 0) | (&Terminal::PkH(ref key), 0) => Some(key.clone()),
-            (&Terminal::Multi(_, ref keys), _) | (&Terminal::MultiA(_, ref keys), _) => {
-                keys.get(n).cloned()
-            }
-            _ => None,
-        }
+        todo!("Update to also consider musig keys")
+        // match (&self.node, n) {
+        //     (&Terminal::PkK(ref key), 0) | (&Terminal::PkH(ref key), 0) => Some(key.clone()),
+        //     (&Terminal::Multi(_, ref keys), _) | (&Terminal::MultiA(_, ref keys), _) => {
+        //         keys.get(n).cloned()
+        //     }
+        //     _ => None,
+        // }
     }
 
     /// Returns `Option::Some` with hash of n'th public key from the current miniscript item,
@@ -194,16 +198,18 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     ///
     /// NB: The function analyzes only single miniscript item and not any of its descendants in AST.
     pub fn get_nth_pkh(&self, n: usize) -> Option<Pk::RawPkHash> {
-        match (&self.node, n) {
-            (&Terminal::RawPkH(ref hash), 0) => Some(hash.clone()),
-            (&Terminal::PkK(ref key), 0) | (&Terminal::PkH(ref key), 0) => {
-                Some(key.to_pubkeyhash())
-            }
-            (&Terminal::Multi(_, ref keys), _) | (&Terminal::MultiA(_, ref keys), _) => {
-                keys.get(n).map(Pk::to_pubkeyhash)
-            }
-            _ => None,
-        }
+        todo!("Consider musig keys here too");
+        // match (&self.node, n) {
+        //     (&Terminal::RawPkH(ref hash), 0) => Some(hash.clone()),
+        //     (&Terminal::PkK(ref key), 0) | (&Terminal::PkH(ref key), 0) => {
+        //         // Some(key.to_pubkeyhash())
+        //         todo!("iterate over all musig here too");
+        //     }
+        //     (&Terminal::Multi(_, ref keys), _) | (&Terminal::MultiA(_, ref keys), _) => {
+        //         keys.get(n).map(Pk::to_pubkeyhash)
+        //     }
+        //     _ => None,
+        // }
     }
 
     /// Returns `Option::Some` with hash of n'th public key or hash from the current miniscript item,
@@ -211,16 +217,17 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     ///
     /// NB: The function analyzes only single miniscript item and not any of its descendants in AST.
     pub fn get_nth_pk_pkh(&self, n: usize) -> Option<PkPkh<Pk>> {
-        match (&self.node, n) {
-            (&Terminal::RawPkH(ref hash), 0) => Some(PkPkh::HashedPubkey(hash.clone())),
-            (&Terminal::PkH(ref key), 0) | (&Terminal::PkK(ref key), 0) => {
-                Some(PkPkh::PlainPubkey(key.clone()))
-            }
-            (&Terminal::Multi(_, ref keys), _) | (&Terminal::MultiA(_, ref keys), _) => {
-                keys.get(n).map(|key| PkPkh::PlainPubkey(key.clone()))
-            }
-            _ => None,
-        }
+        todo!("Consider musig keys here too");
+        // match (&self.node, n) {
+        //     (&Terminal::RawPkH(ref hash), 0) => Some(PkPkh::HashedPubkey(hash.clone())),
+        //     (&Terminal::PkH(ref key), 0) | (&Terminal::PkK(ref key), 0) => {
+        //         Some(PkPkh::PlainPubkey(key.clone()))
+        //     }
+        //     (&Terminal::Multi(_, ref keys), _) | (&Terminal::MultiA(_, ref keys), _) => {
+        //         keys.get(n).map(|key| PkPkh::PlainPubkey(key.clone()))
+        //     }
+        //     _ => None,
+        // }
     }
 }
 

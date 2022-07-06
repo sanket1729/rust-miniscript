@@ -124,7 +124,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Miniscript<Pk, Ctx>
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Terminal<Pk, Ctx> {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
-            Terminal::PkK(ref pk) | Terminal::PkH(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
+            Terminal::PkK(ref pk) => {
+                todo!("Convert keyExpr::Musig into n of n threshold")
+            }
+            Terminal::PkH(ref pk) => Semantic::KeyHash(pk.to_pubkeyhash()),
             Terminal::RawPkH(ref pkh) => Semantic::KeyHash(pkh.clone()),
             Terminal::After(t) => Semantic::After(t),
             Terminal::Older(t) => Semantic::Older(t),
@@ -161,12 +164,15 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Terminal<Pk, Ctx> {
                 let semantic_subs: Result<_, Error> = subs.iter().map(|s| s.node.lift()).collect();
                 Semantic::Threshold(k, semantic_subs?)
             }
-            Terminal::Multi(k, ref keys) | Terminal::MultiA(k, ref keys) => Semantic::Threshold(
+            Terminal::Multi(k, ref keys) => Semantic::Threshold(
                 k,
                 keys.iter()
                     .map(|k| Semantic::KeyHash(k.to_pubkeyhash()))
                     .collect(),
             ),
+            Terminal::MultiA(k, ref keys) => {
+                todo!("Convert keyExpr::Musig into n of n threshold")
+            }
         }
         .normalized();
         Ok(ret)

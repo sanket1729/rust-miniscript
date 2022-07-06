@@ -593,7 +593,7 @@ where
                 Terminal::PkK(ref pk) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_pk(&mut self.verify_sig, *pk);
+                    let res = self.stack.evaluate_pk(&mut self.verify_sig, todo!("Do a keyagg here to compute the final aggregated key and use that key here"));
                     if res.is_some() {
                         return res;
                     }
@@ -870,7 +870,7 @@ where
                         // push 1 on satisfied sigs and push 0 on empty sigs
                         match self
                             .stack
-                            .evaluate_pk(&mut self.verify_sig, subs[node_state.n_evaluated])
+                            .evaluate_pk(&mut self.verify_sig, todo!("Do a keyagg on subs[node_state.n_evaluated] and evaluate the final key"))
                         {
                             Some(Ok(x)) => {
                                 self.push_evaluation_state(

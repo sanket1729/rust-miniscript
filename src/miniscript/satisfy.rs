@@ -935,7 +935,8 @@ impl Satisfaction {
     {
         match *term {
             Terminal::PkK(ref pk) => Satisfaction {
-                stack: Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash),
+                // stack: Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash),
+                stack: todo!("Update the Witness::signature function to take KeyExpr parameter and only feed signatures if the variant is single, otherwise "),
                 has_sig: true,
             },
             Terminal::PkH(ref pk) => Satisfaction {
@@ -1186,7 +1187,7 @@ impl Satisfaction {
                 let mut sig_count = 0;
                 let mut sigs = vec![vec![vec![]]; keys.len()];
                 for (i, pk) in keys.iter().rev().enumerate() {
-                    match Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash) {
+                    match Witness::signature::<_, _, Ctx>(stfr, todo!("Change definition of witness::signature"), leaf_hash) {
                         Witness::Stack(sig) => {
                             sigs[i] = sig;
                             sig_count += 1;

@@ -16,6 +16,14 @@ pub enum KeyExpr<Pk: MiniscriptKey> {
     MuSig(Vec<KeyExpr<Pk>>),
 }
 
+impl<Pk: MiniscriptKey> KeyExpr<Pk> {
+    /// Returns an Optional Pk if this variant is a single key. If is
+    /// a Musig variant return None.
+    pub fn single_key(&self) -> Option<Pk> {
+        todo!();
+    }
+}
+
 impl<Pk: MiniscriptKey + FromStr> FromTree for KeyExpr<Pk> {
     fn from_tree(tree: &Tree) -> Result<KeyExpr<Pk>, Error> {
         if tree.name == "musig" {

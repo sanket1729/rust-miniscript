@@ -593,7 +593,9 @@ where
                 Terminal::PkK(ref pk) => {
                     debug_assert_eq!(node_state.n_evaluated, 0);
                     debug_assert_eq!(node_state.n_satisfied, 0);
-                    let res = self.stack.evaluate_pk(&mut self.verify_sig, todo!("Do a keyagg here to compute the final aggregated key and use that key here"));
+                    let pk = pk.single_key().expect("Got a Musig key from script");
+                    // pk = KeyExpr::Single(pk) . This cannot KeyExpr::Musig()
+                    let res = self.stack.evaluate_pk(&mut self.verify_sig, pk);
                     if res.is_some() {
                         return res;
                     }

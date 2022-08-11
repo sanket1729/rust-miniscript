@@ -42,7 +42,7 @@ use crate::{errstr, Error, ForEachKey, MiniscriptKey, Translator};
 
 /// Maximum TapLeafs allowed in a compiled TapTree
 #[cfg(feature = "compiler")]
-const MAX_COMPILATION_LEAVES: usize = 10_000;
+const MAX_COMPILATION_LEAVES: usize = 1024;
 
 /// Concrete policy which corresponds directly to a Miniscript structure,
 /// and whose disjunctions are annotated with satisfaction probabilities
@@ -538,7 +538,7 @@ impl<Pk: MiniscriptKey> PolicyArc<Pk> {
     /// (ordered by probability) to maintain the list of enumerated sub-policies whose disjunction
     /// is isomorphic to initial policy (*invariant*).
     #[cfg(feature = "compiler")]
-    fn enumerate_policy_tree(&self, prob: f64) -> Vec<(f64, Arc<Self>)> {
+    fn enumerate_policy_tree(self, prob: f64) -> Vec<(f64, Arc<Self>)> {
         let mut tapleaf_prob_vec = BTreeSet::<(Reverse<OrdF64>, Arc<Self>)>::new();
         // Store probability corresponding to policy in the enumerated tree. This is required since
         // owing to the current [policy element enumeration algorithm][`Policy::enumerate_pol`],
@@ -546,8 +546,9 @@ impl<Pk: MiniscriptKey> PolicyArc<Pk> {
         // merge the nodes by adding up the corresponding probabilities for the same policy.
         let mut pol_prob_map = HashMap::<Arc<Self>, OrdF64>::new();
 
-        tapleaf_prob_vec.insert((Reverse(OrdF64(prob)), Arc::new(self.clone())));
-        pol_prob_map.insert(Arc::from(self.clone()), OrdF64(prob));
+        let arc_self = Arc::new(self);
+        tapleaf_prob_vec.insert((Reverse(OrdF64(prob)), Arc::clone(&arc_self)));
+        pol_prob_map.insert(Arc::clone(&arc_self), OrdF64(prob));
 
         // Since we know that policy enumeration *must* result in increase in total number of nodes,
         // we can maintain the length of the ordered set to check if the
@@ -594,6 +595,8 @@ impl<Pk: MiniscriptKey> PolicyArc<Pk> {
 
             // --- Sanity Checks ---
             if enum_len > MAX_COMPILATION_LEAVES || *curr_policy == PolicyArc::Unsatisfiable {
+                ret.append(&mut to_del);
+                ret.extend(tapleaf_prob_vec.into_iter().map(|(p, pol)| (p.0 .0, pol)));
                 break;
             }
 
@@ -1257,9 +1260,11 @@ fn generate_combination<Pk: MiniscriptKey>(
 
     let mut ret: Vec<(f64, Arc<PolicyArc<Pk>>)> = vec![];
     for i in 0..policy_vec.len() {
-        let mut policies: Vec<Arc<PolicyArc<Pk>>> =
-            policy_vec.iter().map(|sub| Arc::clone(sub)).collect();
-        policies.remove(i);
+        let policies: Vec<Arc<PolicyArc<Pk>>> = policy_vec
+            .iter()
+            .enumerate()
+            .filter_map(|(j, sub)| if j != i { Some(Arc::clone(sub)) } else { None })
+            .collect();
         ret.push((
             prob / policy_vec.len() as f64,
             Arc::new(PolicyArc::Threshold(k, policies)),

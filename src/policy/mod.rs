@@ -602,3 +602,27 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "unstable", feature = "compiler"))]
+mod benches {
+    use std::str::FromStr;
+
+    use test::{black_box, Bencher};
+
+    use super::{Concrete, Error};
+    use crate::descriptor::Descriptor;
+    use crate::prelude::*;
+    type TapDesc = Result<Descriptor<String>, Error>;
+
+    #[bench]
+    pub fn compile_large_tap(bh: &mut Bencher) {
+        let pol = Concrete::<String>::from_str(
+            "thresh(8,pk(A),pk(B),pk(C),pk(D),pk(E),pk(F),pk(G),pk(H),pk(I),pk(J))",
+        )
+        .expect("parsing");
+        bh.iter(|| {
+            let pt: TapDesc = pol.compile_tr_private_experimental(Some("UNSPEND".to_string()));
+            black_box(pt).unwrap();
+        });
+    }
+}

@@ -9,6 +9,7 @@ use std::{error, fmt};
 
 use actual_rand as rand;
 use bitcoin::blockdata::witness::Witness;
+use bitcoin::consensus::encode::serialize_hex;
 use bitcoin::hashes::{sha256d, Hash};
 use bitcoin::util::psbt::PartiallySignedTransaction as Psbt;
 use bitcoin::util::sighash::SighashCache;
@@ -230,57 +231,21 @@ pub fn test_desc_satisfy(
         _ => {
             // Non-tr descriptors
             // Ecdsa sigs
-            let sks_reqd = match derived_desc {
-                Descriptor::Bare(bare) => find_sks_ms(&bare.as_inner(), testdata),
-                Descriptor::Pkh(pk) => find_sk_single_key(*pk.as_inner(), testdata),
-                Descriptor::Wpkh(pk) => find_sk_single_key(*pk.as_inner(), testdata),
-                Descriptor::Sh(sh) => match sh.as_inner() {
-                    miniscript::descriptor::ShInner::Wsh(wsh) => match wsh.as_inner() {
-                        miniscript::descriptor::WshInner::SortedMulti(ref smv) => {
-                            let ms = Miniscript::from_ast(smv.sorted_node()).unwrap();
-                            find_sks_ms(&ms, testdata)
-                        }
-                        miniscript::descriptor::WshInner::Ms(ref ms) => find_sks_ms(&ms, testdata),
-                    },
-                    miniscript::descriptor::ShInner::Wpkh(pk) => {
-                        find_sk_single_key(*pk.as_inner(), testdata)
-                    }
-                    miniscript::descriptor::ShInner::SortedMulti(smv) => {
-                        let ms = Miniscript::from_ast(smv.sorted_node()).unwrap();
-                        find_sks_ms(&ms, testdata)
-                    }
-                    miniscript::descriptor::ShInner::Ms(ms) => find_sks_ms(&ms, testdata),
-                },
-                Descriptor::Wsh(wsh) => match wsh.as_inner() {
-                    miniscript::descriptor::WshInner::SortedMulti(ref smv) => {
-                        let ms = Miniscript::from_ast(smv.sorted_node()).unwrap();
-                        find_sks_ms(&ms, testdata)
-                    }
-                    miniscript::descriptor::WshInner::Ms(ref ms) => find_sks_ms(&ms, testdata),
-                },
-                Descriptor::Tr(_tr) => unreachable!("Tr checked earlier"),
-            };
-            let msg = psbt
-                .sighash_msg(0, &mut sighash_cache, None)
-                .unwrap()
-                .to_secp_msg();
-
-            // Fixme: Take a parameter
-            let hash_ty = bitcoin::EcdsaSighashType::All;
-
-            // Finally construct the signature and add to psbt
-            for sk in sks_reqd {
-                let sig = secp.sign_ecdsa(&msg, &sk);
-                let pk = pks[sks.iter().position(|&x| x == sk).unwrap()];
-                assert!(secp.verify_ecdsa(&msg, &sig, &pk.inner).is_ok());
-                psbt.inputs[0].partial_sigs.insert(
-                    pk,
-                    bitcoin::EcdsaSig {
-                        sig,
-                        hash_ty: hash_ty,
-                    },
-                );
+            let mut key_map = BTreeMap::new();
+            print!("{},", serialize_hex(&psbt));
+            for (pk, _) in psbt.inputs[0].bip32_derivation.iter() {
+                let pk = bitcoin::PublicKey::new(*pk);
+                if let Some(sk) = find_priv_key(pk, testdata) {
+                    key_map.insert(pk, sk);
+                }
             }
+            let sigs = psbt.sign(&key_map, &secp).unwrap();
+            assert!(sigs[&0].len() == key_map.len()); // all keys signed, nothing should be skipped
+            print!("{},", serialize_hex(&psbt));
+            for (pk, sk) in key_map.iter() {
+                print!("{};{},", pk, sk);
+            }
+            println!("");
         }
     }
     // Add the hash preimages to the psbt
@@ -300,7 +265,7 @@ pub fn test_desc_satisfy(
         testdata.pubdata.ripemd160,
         testdata.secretdata.ripemd160_pre.to_vec(),
     );
-    println!("Testing descriptor: {}", definite_desc);
+    // println!("Testing descriptor: {}", definite_desc);
     // Finalize the transaction using psbt
     // Let miniscript do it's magic!
     if let Err(_) = psbt.finalize_mut(&secp) {
@@ -357,6 +322,13 @@ fn find_sk_single_key(pk: bitcoin::PublicKey, testdata: &TestData) -> Vec<secp25
     let pks = &testdata.pubdata.pks;
     let i = pks.iter().position(|&x| x.to_public_key() == pk);
     i.map(|idx| vec![sks[idx]]).unwrap_or(Vec::new())
+}
+
+fn find_priv_key(pk: bitcoin::PublicKey, testdata: &TestData) -> Option<bitcoin::PrivateKey> {
+    let sks = &testdata.secretdata.sks;
+    let pks = &testdata.pubdata.pks;
+    let i = pks.iter().position(|&x| x.to_public_key() == pk);
+    i.map(|idx| bitcoin::PrivateKey::new(sks[idx], bitcoin::Network::Regtest))
 }
 
 fn test_descs(cl: &Client, testdata: &TestData) {

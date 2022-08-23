@@ -27,7 +27,9 @@ use bitcoin::{
 };
 use electrum_client::{Client, ElectrumApi};
 use miniscript::psbt::{PsbtExt, PsbtInputSatisfier};
-use miniscript::ToPublicKey;
+use miniscript::{
+    DefiniteDescriptorKey, Descriptor, DescriptorPublicKey, Miniscript, Tap, ToPublicKey,
+};
 
 fn main() {
     let secp = Secp256k1::new();
@@ -55,39 +57,45 @@ fn main() {
 
     println!("preimage {}", preimage_hash.to_string());
 
-    let alice_script = Script::from_hex(
-        "029000b275209997a497d964fc1a62885b05a51166a65a90df00492c8d7cf61d6accf54803beac",
-    )
+    let alice_ms = Miniscript::<DefiniteDescriptorKey, Tap>::from_str(&format!(
+        "and_v(v:pk({}),older(144))",
+        bob.public_key()
+    ))
     .unwrap();
 
-    let bob_script = Builder::new()
-        .push_opcode(all::OP_SHA256)
-        .push_slice(&preimage_hash)
-        .push_opcode(all::OP_EQUALVERIFY)
-        .push_x_only_key(&bob.public_key())
-        .push_opcode(all::OP_CHECKSIG)
-        .into_script();
+    let bob_ms = Miniscript::<DefiniteDescriptorKey, Tap>::from_str(&format!(
+        "and_v(v:sha256({}),pk({}))",
+        preimage_hash,
+        alice.public_key()
+    ))
+    .unwrap();
 
-    let builder =
-        TaprootBuilder::with_huffman_tree(vec![(1, bob_script.clone()), (1, alice_script.clone())])
-            .unwrap();
+    let desc = Descriptor::<DefiniteDescriptorKey>::from_str(&format!(
+        "tr({},{{{},{}}})",
+        internal.public_key(),
+        &alice_ms,
+        &bob_ms
+    ))
+    .unwrap();
 
-    let tap_tree = TapTree::from_builder(builder).unwrap();
+    // let tap_tree = TapTree::from_builder(builder).unwrap();
 
-    let tap_info = tap_tree
-        .into_builder()
-        .finalize(&secp, internal.public_key())
-        .unwrap();
+    // let tap_info = tap_tree
+    //     .into_builder()
+    //     .finalize(&secp, internal.public_key())
+    //     .unwrap();
 
-    let merkle_root = tap_info.merkle_root();
-    let tweak_key_pair = internal.tap_tweak(&secp, merkle_root).into_inner();
+    // let merkle_root = tap_info.merkle_root();
+    // let tweak_key_pair = internal.tap_tweak(&secp, merkle_root).into_inner();
 
-    let address = Address::p2tr(
-        &secp,
-        tap_info.internal_key(),
-        tap_info.merkle_root(),
-        bitcoin::Network::Testnet,
-    );
+    // let address = Address::p2tr(
+    //     &secp,
+    //     tap_info.internal_key(),
+    //     tap_info.merkle_root(),
+    //     bitcoin::Network::Testnet,
+    // );
+
+    let address = desc.address(bitcoin::Network::Testnet).unwrap();
 
     let client = Client::new("ssl://electrum.blockstream.info:60002").unwrap();
     let vec_tx_in = client
@@ -109,7 +117,7 @@ fn main() {
         .map(|tx_id| client.transaction_get(&tx_id.previous_output.txid).unwrap())
         .collect::<Vec<Transaction>>();
 
-    let mut tx = Transaction {
+    let tx = Transaction {
         version: 2,
         lock_time: 0,
         input: vec![TxIn {
@@ -129,13 +137,23 @@ fn main() {
         }],
     };
 
+    // Creator role of psbt
+    let mut psbt = PartiallySignedTransaction::from_unsigned_tx(tx.clone()).unwrap();
+
+    // Update all the descriptor information. Updater role of Psbt
+    psbt.update_input_with_descriptor(0, &desc).unwrap();
+    // descriptors don't have preimages so feed them manually
+    psbt.inputs[0]
+        .sha256_preimages
+        .insert(preimage_hash, preimage.to_vec());
+
     let prevouts = Prevouts::One(0, prev_tx[0].output[0].clone());
 
     let sighash_sig = SighashCache::new(&mut tx.clone())
         .taproot_script_spend_signature_hash(
             0,
             &prevouts,
-            ScriptPath::with_defaults(&bob_script),
+            ScriptPath::with_defaults(&bob_ms.encode()),
             SchnorrSighashType::AllPlusAnyoneCanPay,
         )
         .unwrap();
@@ -150,37 +168,44 @@ fn main() {
 
     let sig = secp.sign_schnorr(&Message::from_slice(&sighash_sig).unwrap(), &bob);
 
-    let actual_control = tap_info
-        .control_block(&(bob_script.clone(), LeafVersion::TapScript))
-        .unwrap();
+    // let actual_control = tap_info
+    //     .control_block(&(bob_script.clone(), LeafVersion::TapScript))
+    //     .unwrap();
 
-    let res =
-        actual_control.verify_taproot_commitment(&secp, tweak_key_pair.public_key(), &bob_script);
+    // let res =
+    //     actual_control.verify_taproot_commitment(&secp, tweak_key_pair.public_key(), &bob_script);
 
-    println!("is taproot committed? {} ", res);
+    // println!("is taproot committed? {} ", res);
 
-    println!("control block {} ", actual_control.serialize().to_hex());
+    // println!("control block {} ", actual_control.serialize().to_hex());
 
-    let mut b_tree_map = BTreeMap::<ControlBlock, (Script, LeafVersion)>::default();
-    b_tree_map.insert(
-        actual_control.clone(),
-        (bob_script.clone(), LeafVersion::TapScript),
-    );
+    // let mut b_tree_map = BTreeMap::<ControlBlock, (Script, LeafVersion)>::default();
+    // b_tree_map.insert(
+    //     actual_control.clone(),
+    //     (bob_script.clone(), LeafVersion::TapScript),
+    // );
 
     let schnorr_sig = SchnorrSig {
         sig,
         hash_ty: SchnorrSighashType::AllPlusAnyoneCanPay,
     };
 
-    let wit = Witness::from_vec(vec![
-        schnorr_sig.to_vec(),
-        preimage.clone(),
-        bob_script.to_bytes(),
-        actual_control.serialize(),
-    ]);
+    let bob_leaf_hash = ScriptPath::with_defaults(&bob_ms.encode()).leaf_hash();
+    psbt.inputs[0]
+        .tap_script_sigs
+        .insert((bob.public_key(), bob_leaf_hash), schnorr_sig);
 
-    tx.input[0].witness = wit;
+    // let wit = Witness::from_vec(vec![
+    //     schnorr_sig.to_vec(),
+    //     preimage.clone(),
+    //     bob_script.to_bytes(),
+    //     actual_control.serialize(),
+    // ]);
 
+    // tx.input[0].witness = wit;
+
+    psbt.finalize_mut(&secp).unwrap();
+    let tx = psbt.extract_tx();
     println!("Address: {} ", address.to_string());
 
     // this part fails fix me plz !!!
@@ -190,6 +215,6 @@ fn main() {
     // sig
     println!("signature {:#?}", sig.to_hex());
     println!("Input preimage {}", preimage.to_hex());
-    println!("script {}", bob_script.to_hex());
-    println!("control block {:#?}", actual_control.serialize().to_hex());
+    println!("script {}", bob_ms.encode().to_hex());
+    // println!("control block {:#?}", actual_control.serialize().to_hex());
 }

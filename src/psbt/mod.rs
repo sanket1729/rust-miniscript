@@ -31,7 +31,6 @@ use bitcoin::util::sighash::SighashCache;
 use bitcoin::util::taproot::{self, ControlBlock, LeafVersion, TapLeafHash};
 use bitcoin::{self, EcdsaSighashType, SchnorrSighashType, Script};
 
-use crate::miniscript::iter::PkPkh;
 use crate::miniscript::limits::SEQUENCE_LOCKTIME_DISABLE_FLAG;
 use crate::miniscript::musig_key::KeyExpr;
 use crate::miniscript::satisfy::{After, Older};
@@ -1039,20 +1038,8 @@ fn update_input_with_descriptor_helper(
                     .expect("Control block must exist in script map for every known leaf");
                 input.tap_scripts.insert(control_block, leaf_script);
 
-                for (pk_pkh_derived, pk_pkh_xpk) in ms_derived.iter_pk_pkh().zip(ms.iter_pk_pkh()) {
-                    let (xonly, xpk) = match (pk_pkh_derived, pk_pkh_xpk) {
-                        (PkPkh::PlainPubkey(pk), PkPkh::PlainPubkey(xpk)) => {
-                            (pk.to_x_only_pubkey(), xpk)
-                        }
-                        (PkPkh::HashedPubkey(hash), PkPkh::HashedPubkey(xpk)) => (
-                            *hash_lookup
-                                .0
-                                .get(&hash)
-                                .expect("translate_pk inserted an entry for every hash"),
-                            xpk,
-                        ),
-                        _ => unreachable!("the iterators work in the same order"),
-                    };
+                for (pk_pkh_derived, pk_pkh_xpk) in ms_derived.iter_pk().zip(ms.iter_pk()) {
+                    let (xonly, xpk) = (pk_pkh_derived.to_x_only_pubkey(), pk_pkh_xpk);
 
                     input
                         .tap_key_origins

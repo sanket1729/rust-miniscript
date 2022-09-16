@@ -432,7 +432,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
 
                 let n = subs.len() - unsatisfied_count - trivial_count; // remove all true/false
                 let m = k.checked_sub(trivial_count).map_or(0, |x| x); // satisfy all trivial
-                // m == n denotes `and` and m == 1 denotes `or`
+                                                                       // m == n denotes `and` and m == 1 denotes `or`
                 let is_and = m == n;
                 let is_or = m == 1;
                 for sub in subs {
@@ -721,10 +721,16 @@ mod tests {
         let policy = StringPolicy::from_str("or(pkh(),and(older(1000),pkh()))").unwrap();
         assert_eq!(policy.n_keys(), 2);
         assert_eq!(policy.minimum_n_keys(), Some(1));
-        assert_eq!(policy.satisfy_constraint(&Policy::KeyHash("".to_owned()), true), Policy::Trivial);
+        assert_eq!(
+            policy.satisfy_constraint(&Policy::KeyHash("".to_owned()), true),
+            Policy::Trivial
+        );
 
         let policy = StringPolicy::from_str("and(pkh(),older(100))").unwrap();
-        assert_eq!(policy.satisfy_constraint(&Policy::KeyHash("".to_owned()), true), Policy::Older(100));
+        assert_eq!(
+            policy.satisfy_constraint(&Policy::KeyHash("".to_owned()), true),
+            Policy::Older(100)
+        );
 
         let policy = StringPolicy::from_str("or(pkh(),UNSATISFIABLE)").unwrap();
         assert_eq!(

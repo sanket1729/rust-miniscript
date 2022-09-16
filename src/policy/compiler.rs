@@ -870,24 +870,29 @@ where
 
             let key_vec: Vec<Pk> = subs
                 .iter()
-                .filter_map(|pol|
+                .filter_map(|pol| {
                     if let Concrete::Key(ref pk) = *pol {
                         Some(pk.clone())
                     } else {
                         None
                     }
-                )
+                })
                 .collect();
             if key_vec.len() == 2 {
-                let musig_vec = key_vec.into_iter().map(|pk| KeyExpr::SingleKey(pk)).collect();
-                insert_wrap!(AstElemExt::terminal(Terminal::PkK(KeyExpr::MuSig(musig_vec))));
+                let musig_vec = key_vec
+                    .into_iter()
+                    .map(|pk| KeyExpr::SingleKey(pk))
+                    .collect();
+                insert_wrap!(AstElemExt::terminal(Terminal::PkK(KeyExpr::MuSig(
+                    musig_vec
+                ))));
             } else {
                 compile_binary!(&mut left, &mut right, [1.0, 1.0], Terminal::AndB);
                 compile_binary!(&mut right, &mut left, [1.0, 1.0], Terminal::AndB);
                 compile_binary!(&mut left, &mut right, [1.0, 1.0], Terminal::AndV);
                 compile_binary!(&mut right, &mut left, [1.0, 1.0], Terminal::AndV);
             }
-            
+
             let mut zero_comp = BTreeMap::new();
             zero_comp.insert(
                 CompilationKey::from_type(
@@ -1280,51 +1285,51 @@ mod tests {
 
     #[test]
     fn compile_to_musig() {
-        let pol: StringPolicy = 
-            StringPolicy::from_str("thresh(3,pk(A),pk(B),pk(C))").unwrap();
+        let pol: StringPolicy = StringPolicy::from_str("thresh(3,pk(A),pk(B),pk(C))").unwrap();
         let output = pol.compile::<Tap>();
         println!("The miniscript is {}", output.unwrap());
 
-        let pol: StringPolicy = 
-            StringPolicy::from_str("and(pk(A),pk(B))").unwrap();
+        let pol: StringPolicy = StringPolicy::from_str("and(pk(A),pk(B))").unwrap();
         let output = pol.compile::<Tap>();
         println!("The miniscript is {}", output.unwrap());
 
-        let pol: StringPolicy = 
+        let pol: StringPolicy =
             StringPolicy::from_str("thresh(2,thresh(2,pk(A),pk(B)),pk(C),pk(D))").unwrap();
         let output = pol.compile::<Tap>();
         println!("The miniscript is {}", output.unwrap());
 
-        let pol: StringPolicy = 
-            StringPolicy::from_str("thresh(2,pk(A),pk(B),pk(C))").unwrap();
+        let pol: StringPolicy = StringPolicy::from_str("thresh(2,pk(A),pk(B),pk(C))").unwrap();
         let output = pol.compile::<Segwitv0>();
         println!("The miniscript is {}", output.unwrap());
 
-        let pol: StringPolicy = 
-            StringPolicy::from_str("thresh(2,pk(A),pk(B),pk(C))").unwrap();
+        let pol: StringPolicy = StringPolicy::from_str("thresh(2,pk(A),pk(B),pk(C))").unwrap();
         let output = pol.compile::<Tap>();
         println!("The miniscript is {}", output.unwrap());
     }
 
     #[test]
     fn test_internal_key_extraction() {
-        let pol: StringPolicy = 
-            StringPolicy::from_str("thresh(1,and(pk(A1),pk(A2)),thresh(3,pk(A6),pk(A3),pk(A4)),pk(A5))").unwrap();
+        let pol: StringPolicy = StringPolicy::from_str(
+            "thresh(1,and(pk(A1),pk(A2)),thresh(3,pk(A6),pk(A3),pk(A4)),pk(A5))",
+        )
+        .unwrap();
         let output = pol.compile::<Tap>().unwrap();
         println!("The miniscript is {}", output);
         let taproot = pol.compile_tr(Some("UNSPENDABLE_KEY".to_string())).unwrap();
         // Internal key => pk(A5)
-        println!("The taproot descriptor is {}", taproot); 
+        println!("The taproot descriptor is {}", taproot);
 
-        let pol: StringPolicy = 
-            StringPolicy::from_str("thresh(1,and(pk(A1),pk(A2)),thresh(3,pk(A6),pk(A3),pk(A4)),and(pk(A5),sha256(H)))").unwrap();
+        let pol: StringPolicy = StringPolicy::from_str(
+            "thresh(1,and(pk(A1),pk(A2)),thresh(3,pk(A6),pk(A3),pk(A4)),and(pk(A5),sha256(H)))",
+        )
+        .unwrap();
         let output = pol.compile::<Tap>().unwrap();
         println!("The miniscript is {}", output);
         let taproot = pol.compile_tr(Some("UNSPENDABLE_KEY".to_string())).unwrap();
         // Internal key should be => musig(A1,A2)
         println!("The taproot descriptor is {}", taproot);
 
-        let pol: StringPolicy = 
+        let pol: StringPolicy =
             StringPolicy::from_str("thresh(1,and(pk(A1),older(9)),and(pk(A2),sha256(H)))").unwrap();
         let output = pol.compile::<Tap>().unwrap();
         println!("The miniscript is {}", output);
@@ -1346,8 +1351,7 @@ mod tests {
             )
         )";
         let pol_str = pol_str.replace(&[' ', '\n'][..], "");
-        let pol: StringPolicy = 
-            StringPolicy::from_str(pol_str.as_str()).unwrap();
+        let pol: StringPolicy = StringPolicy::from_str(pol_str.as_str()).unwrap();
         let output = pol.compile::<Tap>().unwrap();
         println!("The miniscript is {}", output);
         let taproot = pol.compile_tr(Some("UNSPENDABLE_KEY".to_string())).unwrap();
@@ -1368,8 +1372,7 @@ mod tests {
             )
         )";
         let pol_str = pol_str.replace(&[' ', '\n'][..], "");
-        let pol: StringPolicy = 
-            StringPolicy::from_str(pol_str.as_str()).unwrap();
+        let pol: StringPolicy = StringPolicy::from_str(pol_str.as_str()).unwrap();
         let output = pol.compile::<Tap>().unwrap();
         println!("The miniscript is {}", output);
         let taproot = pol.compile_tr(Some("UNSPENDABLE_KEY".to_string())).unwrap();
@@ -1390,8 +1393,7 @@ mod tests {
             )
         )";
         let pol_str = pol_str.replace(&[' ', '\n'][..], "");
-        let pol: StringPolicy = 
-            StringPolicy::from_str(pol_str.as_str()).unwrap();
+        let pol: StringPolicy = StringPolicy::from_str(pol_str.as_str()).unwrap();
         let output = pol.compile::<Tap>().unwrap();
         println!("The miniscript is {}", output);
         let taproot = pol.compile_tr(Some("UNSPENDABLE_KEY".to_string())).unwrap();
@@ -1409,9 +1411,10 @@ mod tests {
         assert!(pol.compile::<Segwitv0>().is_err());
 
         // This should compile
-        let pol: StringPolicy =
-            StringPolicy::from_str("and(pk(A),or(and(after(9),pk(B)),and(after(1000000000),pk(C))))")
-                .unwrap();
+        let pol: StringPolicy = StringPolicy::from_str(
+            "and(pk(A),or(and(after(9),pk(B)),and(after(1000000000),pk(C))))",
+        )
+        .unwrap();
         assert!(pol.compile::<Segwitv0>().is_ok());
     }
     #[test]

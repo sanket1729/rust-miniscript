@@ -212,7 +212,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     fn is_key(&self) -> bool {
         match self {
             Concrete::Key(..) => true,
-            _ => false
+            _ => false,
         }
     }
 
@@ -223,41 +223,49 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 // Both the children should be keys
                 if subs[0].is_key() && subs[1].is_key() {
                     return subs
-                    .iter()
-                    .map(|pol| match pol {
-                        Concrete::Key(pk) => pk.clone(),
-                        _ => unreachable!("Checked above that And only contains keys")
-                    })
-                    .collect();
+                        .iter()
+                        .map(|pol| match pol {
+                            Concrete::Key(pk) => pk.clone(),
+                            _ => unreachable!("Checked above that And only contains keys"),
+                        })
+                        .collect();
                 } else {
-                    return vec![]
+                    return vec![];
                 }
             }
             Concrete::Threshold(k, ref subs) if *k == subs.len() => {
                 // Need to create a single vector with all the keys
-                let mut all_non_empty = true;  // all the vectors should be non-empty
+                let mut all_non_empty = true; // all the vectors should be non-empty
                 let keys = subs
-                .iter()
-                .map(|policy| policy.extract_recursive())
-                .filter(|key_vec| {all_non_empty &= key_vec.len() > 0; key_vec.len() > 0})
-                .flatten()
-                .collect();
+                    .iter()
+                    .map(|policy| policy.extract_recursive())
+                    .filter(|key_vec| {
+                        all_non_empty &= key_vec.len() > 0;
+                        key_vec.len() > 0
+                    })
+                    .flatten()
+                    .collect();
                 if all_non_empty {
                     keys
                 } else {
                     vec![]
-                } 
+                }
             }
             Concrete::Threshold(k, ref subs) => {
                 // Find any k valid sub-policies and return the musig() of keys
                 // obtained from them.
                 let mut valid_policies = 0;
                 let keys: Vec<Pk> = subs
-                .iter()
-                .map(|policy| policy.extract_recursive())
-                .filter(|key_vec| {if key_vec.len() > 0 {valid_policies += 1;} key_vec.len() > 0 && valid_policies <= *k})
-                .flatten()
-                .collect();
+                    .iter()
+                    .map(|policy| policy.extract_recursive())
+                    .filter(|key_vec| {
+                        if key_vec.len() > 0 {
+                            valid_policies += 1;
+                        }
+                        key_vec.len() > 0 && valid_policies <= *k
+                    })
+                    .flatten()
+                    .collect();
                 if valid_policies == *k + 1 {
                     keys
                 } else {
@@ -295,7 +303,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 }
             }
             Concrete::Key(ref pk) => vec![pk.clone()],
-            _ => vec![]
+            _ => vec![],
         }
     }
 
@@ -305,7 +313,7 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
         if self == pol.clone() {
             return match pol {
                 Policy::Threshold(k, ref subs) if *k != subs.len() => pol.clone(),
-                _ => Policy::Unsatisfiable
+                _ => Policy::Unsatisfiable,
             };
         }
         match self {
@@ -325,10 +333,13 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
     }
     /// Extract key from policy tree
     #[cfg(feature = "compiler")]
-    fn extract_key_new(self, unspendable_key: Option<Pk>) -> Result<(KeyExpr<Pk>, Policy<Pk>), Error> {
+    fn extract_key_new(
+        self,
+        unspendable_key: Option<Pk>,
+    ) -> Result<(KeyExpr<Pk>, Policy<Pk>), Error> {
         let mut internal_key: Option<Vec<Pk>> = None;
         {
-            // p1 -> and(pk(A), OR(3@first, 2@second)) --> musig(A, ...) 
+            // p1 -> and(pk(A), OR(3@first, 2@second)) --> musig(A, ...)
             // thresh(3, A, B, C, D, Sha256(H)) -> (after splitting) musig(A, B, C)
             // Only replace the policy, if the content is a subset of the extracted internal key
             // and(pk1, pk2)
@@ -379,12 +390,15 @@ impl<Pk: MiniscriptKey> Policy<Pk> {
                 }
             }
             return match (internal_key, unspendable_key) {
-                (Some(key_vec), _) => {
-                    Ok((
-                        KeyExpr::MuSig(key_vec.iter().map(|pk| KeyExpr::SingleKey(pk.clone())).collect()),
-                        self.translate_unsatisfiable_policy(&leaf_policy)
-                    ))
-                }
+                (Some(key_vec), _) => Ok((
+                    KeyExpr::MuSig(
+                        key_vec
+                            .iter()
+                            .map(|pk| KeyExpr::SingleKey(pk.clone()))
+                            .collect(),
+                    ),
+                    self.translate_unsatisfiable_policy(&leaf_policy),
+                )),
                 (_, Some(key)) => {
                     let all_keys = self.keys();
                     if all_keys.len() > 0 {

@@ -7,15 +7,15 @@
 //! scriptpubkeys.
 //!
 
-use core::{cmp, i64, mem};
+use core::{cmp, fmt, i64, mem};
 
 use bitcoin::hashes::hash160;
-use bitcoin::key::XOnlyPublicKey;
-use bitcoin::taproot::{ControlBlock, LeafVersion, TapLeafHash};
-use bitcoin::{absolute, Sequence};
+use bitcoin::taproot::{ControlBlock, LeafVersion, TapLeafHash, TapNodeHash};
+use bitcoin::{absolute, ScriptBuf, Sequence};
 use sync::Arc;
 
 use super::context::SigType;
+use crate::plan::AssetProvider;
 use crate::prelude::*;
 use crate::util::witness_size;
 use crate::{AbsLockTime, Miniscript, MiniscriptKey, ScriptContext, Terminal, ToPublicKey};
@@ -53,38 +53,6 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
         None
     }
 
-    /// Given a raw `Pkh`, lookup corresponding [`bitcoin::PublicKey`]
-    fn lookup_raw_pkh_pk(&self, _: &hash160::Hash) -> Option<bitcoin::PublicKey> {
-        None
-    }
-
-    /// Given a raw `Pkh`, lookup corresponding [`bitcoin::secp256k1::XOnlyPublicKey`]
-    fn lookup_raw_pkh_x_only_pk(&self, _: &hash160::Hash) -> Option<XOnlyPublicKey> {
-        None
-    }
-
-    /// Given a keyhash, look up the EC signature and the associated key
-    /// Even if signatures for public key Hashes are not available, the users
-    /// can use this map to provide pkh -> pk mapping which can be useful
-    /// for dissatisfying pkh.
-    fn lookup_raw_pkh_ecdsa_sig(
-        &self,
-        _: &hash160::Hash,
-    ) -> Option<(bitcoin::PublicKey, bitcoin::ecdsa::Signature)> {
-        None
-    }
-
-    /// Given a keyhash, look up the schnorr signature and the associated key
-    /// Even if signatures for public key Hashes are not available, the users
-    /// can use this map to provide pkh -> pk mapping which can be useful
-    /// for dissatisfying pkh.
-    fn lookup_raw_pkh_tap_leaf_script_sig(
-        &self,
-        _: &(hash160::Hash, TapLeafHash),
-    ) -> Option<(XOnlyPublicKey, bitcoin::taproot::Signature)> {
-        None
-    }
-
     /// Given a SHA256 hash, look up its preimage
     fn lookup_sha256(&self, _: &Pk::Sha256) -> Option<Preimage32> {
         None
@@ -106,11 +74,19 @@ pub trait Satisfier<Pk: MiniscriptKey + ToPublicKey> {
     }
 
     /// Assert whether an relative locktime is satisfied
+    ///
+    /// NOTE: If a descriptor mixes time-based and height-based timelocks, the implementation of
+    /// this method MUST only allow timelocks of either unit, but not both. Allowing both could cause
+    /// miniscript to construct an invalid witness.
     fn check_older(&self, _: Sequence) -> bool {
         false
     }
 
     /// Assert whether a absolute locktime is satisfied
+    ///
+    /// NOTE: If a descriptor mixes time-based and height-based timelocks, the implementation of
+    /// this method MUST only allow timelocks of either unit, but not both. Allowing both could cause
+    /// miniscript to construct an invalid witness.
     fn check_after(&self, _: absolute::LockTime) -> bool {
         false
     }
@@ -184,18 +160,6 @@ where
     fn lookup_ecdsa_sig(&self, key: &Pk) -> Option<bitcoin::ecdsa::Signature> {
         self.get(&key.to_pubkeyhash(SigType::Ecdsa)).map(|x| x.1)
     }
-
-    fn lookup_raw_pkh_pk(&self, pk_hash: &hash160::Hash) -> Option<bitcoin::PublicKey> {
-        self.get(pk_hash).map(|x| x.0.to_public_key())
-    }
-
-    fn lookup_raw_pkh_ecdsa_sig(
-        &self,
-        pk_hash: &hash160::Hash,
-    ) -> Option<(bitcoin::PublicKey, bitcoin::ecdsa::Signature)> {
-        self.get(pk_hash)
-            .map(|&(ref pk, sig)| (pk.to_public_key(), sig))
-    }
 }
 
 impl<Pk: MiniscriptKey + ToPublicKey> Satisfier<Pk>
@@ -210,14 +174,6 @@ where
     ) -> Option<bitcoin::taproot::Signature> {
         self.get(&(key.to_pubkeyhash(SigType::Schnorr), *h))
             .map(|x| x.1)
-    }
-
-    fn lookup_raw_pkh_tap_leaf_script_sig(
-        &self,
-        pk_hash: &(hash160::Hash, TapLeafHash),
-    ) -> Option<(XOnlyPublicKey, bitcoin::taproot::Signature)> {
-        self.get(pk_hash)
-            .map(|&(ref pk, sig)| (pk.to_x_only_pubkey(), sig))
     }
 }
 
@@ -234,30 +190,8 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
         (**self).lookup_tap_leaf_script_sig(p, h)
     }
 
-    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<bitcoin::PublicKey> {
-        (**self).lookup_raw_pkh_pk(pkh)
-    }
-
-    fn lookup_raw_pkh_x_only_pk(&self, pkh: &hash160::Hash) -> Option<XOnlyPublicKey> {
-        (**self).lookup_raw_pkh_x_only_pk(pkh)
-    }
-
-    fn lookup_raw_pkh_ecdsa_sig(
-        &self,
-        pkh: &hash160::Hash,
-    ) -> Option<(bitcoin::PublicKey, bitcoin::ecdsa::Signature)> {
-        (**self).lookup_raw_pkh_ecdsa_sig(pkh)
-    }
-
     fn lookup_tap_key_spend_sig(&self) -> Option<bitcoin::taproot::Signature> {
         (**self).lookup_tap_key_spend_sig()
-    }
-
-    fn lookup_raw_pkh_tap_leaf_script_sig(
-        &self,
-        pkh: &(hash160::Hash, TapLeafHash),
-    ) -> Option<(XOnlyPublicKey, bitcoin::taproot::Signature)> {
-        (**self).lookup_raw_pkh_tap_leaf_script_sig(pkh)
     }
 
     fn lookup_tap_control_block_map(
@@ -306,28 +240,6 @@ impl<'a, Pk: MiniscriptKey + ToPublicKey, S: Satisfier<Pk>> Satisfier<Pk> for &'
 
     fn lookup_tap_key_spend_sig(&self) -> Option<bitcoin::taproot::Signature> {
         (**self).lookup_tap_key_spend_sig()
-    }
-
-    fn lookup_raw_pkh_pk(&self, pkh: &hash160::Hash) -> Option<bitcoin::PublicKey> {
-        (**self).lookup_raw_pkh_pk(pkh)
-    }
-
-    fn lookup_raw_pkh_x_only_pk(&self, pkh: &hash160::Hash) -> Option<XOnlyPublicKey> {
-        (**self).lookup_raw_pkh_x_only_pk(pkh)
-    }
-
-    fn lookup_raw_pkh_ecdsa_sig(
-        &self,
-        pkh: &hash160::Hash,
-    ) -> Option<(bitcoin::PublicKey, bitcoin::ecdsa::Signature)> {
-        (**self).lookup_raw_pkh_ecdsa_sig(pkh)
-    }
-
-    fn lookup_raw_pkh_tap_leaf_script_sig(
-        &self,
-        pkh: &(hash160::Hash, TapLeafHash),
-    ) -> Option<(XOnlyPublicKey, bitcoin::taproot::Signature)> {
-        (**self).lookup_raw_pkh_tap_leaf_script_sig(pkh)
     }
 
     fn lookup_tap_control_block_map(
@@ -393,58 +305,6 @@ macro_rules! impl_tuple_satisfier {
                 let &($(ref $ty,)*) = self;
                 $(
                     if let Some(result) = $ty.lookup_tap_leaf_script_sig(key, h) {
-                        return Some(result);
-                    }
-                )*
-                None
-            }
-
-            fn lookup_raw_pkh_ecdsa_sig(
-                &self,
-                key_hash: &hash160::Hash,
-            ) -> Option<(bitcoin::PublicKey, bitcoin::ecdsa::Signature)> {
-                let &($(ref $ty,)*) = self;
-                $(
-                    if let Some(result) = $ty.lookup_raw_pkh_ecdsa_sig(key_hash) {
-                        return Some(result);
-                    }
-                )*
-                None
-            }
-
-            fn lookup_raw_pkh_tap_leaf_script_sig(
-                &self,
-                key_hash: &(hash160::Hash, TapLeafHash),
-            ) -> Option<(XOnlyPublicKey, bitcoin::taproot::Signature)> {
-                let &($(ref $ty,)*) = self;
-                $(
-                    if let Some(result) = $ty.lookup_raw_pkh_tap_leaf_script_sig(key_hash) {
-                        return Some(result);
-                    }
-                )*
-                None
-            }
-
-            fn lookup_raw_pkh_pk(
-                &self,
-                key_hash: &hash160::Hash,
-            ) -> Option<bitcoin::PublicKey> {
-                let &($(ref $ty,)*) = self;
-                $(
-                    if let Some(result) = $ty.lookup_raw_pkh_pk(key_hash) {
-                        return Some(result);
-                    }
-                )*
-                None
-            }
-
-            fn lookup_raw_pkh_x_only_pk(
-                &self,
-                key_hash: &hash160::Hash,
-            ) -> Option<XOnlyPublicKey> {
-                let &($(ref $ty,)*) = self;
-                $(
-                    if let Some(result) = $ty.lookup_raw_pkh_x_only_pk(key_hash) {
                         return Some(result);
                     }
                 )*
@@ -535,11 +395,117 @@ impl_tuple_satisfier!(A, B, C, D, E, F);
 impl_tuple_satisfier!(A, B, C, D, E, F, G);
 impl_tuple_satisfier!(A, B, C, D, E, F, G, H);
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Type of schnorr signature to produce
+pub enum SchnorrSigType {
+    /// Key spend signature
+    KeySpend {
+        /// Merkle root to tweak the key, if present
+        merkle_root: Option<TapNodeHash>,
+    },
+    /// Script spend signature
+    ScriptSpend {
+        /// Leaf hash of the script
+        leaf_hash: TapLeafHash,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+/// Placeholder for some data in a [`Plan`]
+///
+/// [`Plan`]: crate::plan::Plan
+pub enum Placeholder<Pk: MiniscriptKey> {
+    /// Public key and its size
+    Pubkey(Pk, usize),
+    /// ECDSA signature given the raw pubkey
+    EcdsaSigPk(Pk),
+    /// Schnorr signature and its size
+    SchnorrSig(Pk, SchnorrSigType, usize),
+    /// SHA-256 preimage
+    Sha256Preimage(Pk::Sha256),
+    /// HASH256 preimage
+    Hash256Preimage(Pk::Hash256),
+    /// RIPEMD160 preimage
+    Ripemd160Preimage(Pk::Ripemd160),
+    /// HASH160 preimage
+    Hash160Preimage(Pk::Hash160),
+    /// Hash dissatisfaction (32 bytes of 0x00)
+    HashDissatisfaction,
+    /// OP_1
+    PushOne,
+    /// \<empty item\>
+    PushZero,
+    /// Taproot leaf script
+    TapScript(ScriptBuf),
+    /// Taproot control block
+    TapControlBlock(ControlBlock),
+}
+
+impl<Pk: MiniscriptKey> fmt::Display for Placeholder<Pk> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Placeholder::*;
+        match self {
+            Pubkey(pk, size) => write!(f, "Pubkey(pk: {}, size: {})", pk, size),
+            EcdsaSigPk(pk) => write!(f, "EcdsaSigPk(pk: {})", pk),
+            SchnorrSig(pk, tap_leaf_hash, size) => write!(
+                f,
+                "SchnorrSig(pk: {}, tap_leaf_hash: {:?}, size: {})",
+                pk, tap_leaf_hash, size
+            ),
+            Sha256Preimage(hash) => write!(f, "Sha256Preimage(hash: {})", hash),
+            Hash256Preimage(hash) => write!(f, "Hash256Preimage(hash: {})", hash),
+            Ripemd160Preimage(hash) => write!(f, "Ripemd160Preimage(hash: {})", hash),
+            Hash160Preimage(hash) => write!(f, "Hash160Preimage(hash: {})", hash),
+            HashDissatisfaction => write!(f, "HashDissatisfaction"),
+            PushOne => write!(f, "PushOne"),
+            PushZero => write!(f, "PushZero"),
+            TapScript(script) => write!(f, "TapScript(script: {})", script),
+            TapControlBlock(control_block) => write!(
+                f,
+                "TapControlBlock(control_block: {})",
+                bitcoin::consensus::encode::serialize_hex(&control_block.serialize())
+            ),
+        }
+    }
+}
+
+impl<Pk: MiniscriptKey + ToPublicKey> Placeholder<Pk> {
+    /// Replaces the placeholders with the information given by the satisfier
+    pub fn satisfy_self<Sat: Satisfier<Pk>>(&self, sat: &Sat) -> Option<Vec<u8>> {
+        match self {
+            Placeholder::Pubkey(pk, _) => Some(pk.to_public_key().to_bytes()),
+            Placeholder::Hash256Preimage(h) => sat.lookup_hash256(h).map(|p| p.to_vec()),
+            Placeholder::Sha256Preimage(h) => sat.lookup_sha256(h).map(|p| p.to_vec()),
+            Placeholder::Hash160Preimage(h) => sat.lookup_hash160(h).map(|p| p.to_vec()),
+            Placeholder::Ripemd160Preimage(h) => sat.lookup_ripemd160(h).map(|p| p.to_vec()),
+            Placeholder::EcdsaSigPk(pk) => sat.lookup_ecdsa_sig(pk).map(|s| s.to_vec()),
+            Placeholder::SchnorrSig(pk, SchnorrSigType::ScriptSpend { leaf_hash }, size) => sat
+                .lookup_tap_leaf_script_sig(pk, leaf_hash)
+                .map(|s| s.to_vec())
+                .map(|s| {
+                    debug_assert!(s.len() == *size);
+                    s
+                }),
+            Placeholder::SchnorrSig(_, _, size) => {
+                sat.lookup_tap_key_spend_sig().map(|s| s.to_vec()).map(|s| {
+                    debug_assert!(s.len() == *size);
+                    s
+                })
+            }
+            Placeholder::HashDissatisfaction => Some(vec![0; 32]),
+            Placeholder::PushZero => Some(vec![]),
+            Placeholder::PushOne => Some(vec![1]),
+            Placeholder::TapScript(s) => Some(s.to_bytes()),
+            Placeholder::TapControlBlock(cb) => Some(cb.serialize()),
+        }
+    }
+}
+
 /// A witness, if available, for a Miniscript fragment
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Witness {
+pub enum Witness<T> {
     /// Witness Available and the value of the witness
-    Stack(Vec<Vec<u8>>),
+    Stack(Vec<T>),
     /// Third party can possibly satisfy the fragment but we cannot
     /// Witness Unavailable
     Unavailable,
@@ -548,13 +514,13 @@ pub enum Witness {
     Impossible,
 }
 
-impl PartialOrd for Witness {
+impl<Pk: MiniscriptKey> PartialOrd for Witness<Placeholder<Pk>> {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for Witness {
+impl<Pk: MiniscriptKey> Ord for Witness<Placeholder<Pk>> {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         match (self, other) {
             (Witness::Stack(v1), Witness::Stack(v2)) => {
@@ -572,111 +538,84 @@ impl Ord for Witness {
     }
 }
 
-impl Witness {
+impl<Pk: MiniscriptKey + ToPublicKey> Witness<Placeholder<Pk>> {
     /// Turn a signature into (part of) a satisfaction
-    fn signature<Pk: ToPublicKey, S: Satisfier<Pk>, Ctx: ScriptContext>(
-        sat: S,
+    fn signature<S: AssetProvider<Pk>, Ctx: ScriptContext>(
+        sat: &S,
         pk: &Pk,
         leaf_hash: &TapLeafHash,
     ) -> Self {
         match Ctx::sig_type() {
-            super::context::SigType::Ecdsa => match sat.lookup_ecdsa_sig(pk) {
-                Some(sig) => Witness::Stack(vec![sig.to_vec()]),
-                // Signatures cannot be forged
-                None => Witness::Impossible,
-            },
-            super::context::SigType::Schnorr => match sat.lookup_tap_leaf_script_sig(pk, leaf_hash)
-            {
-                Some(sig) => Witness::Stack(vec![sig.to_vec()]),
-                // Signatures cannot be forged
-                None => Witness::Impossible,
-            },
-        }
-    }
-
-    /// Turn a public key related to a pkh into (part of) a satisfaction
-    fn pkh_public_key<Pk: ToPublicKey, S: Satisfier<Pk>, Ctx: ScriptContext>(
-        sat: S,
-        pkh: &hash160::Hash,
-    ) -> Self {
-        // public key hashes are assumed to be unavailable
-        // instead of impossible since it is the same as pub-key hashes
-        match Ctx::sig_type() {
-            SigType::Ecdsa => match sat.lookup_raw_pkh_pk(pkh) {
-                Some(pk) => Witness::Stack(vec![pk.to_bytes()]),
-                None => Witness::Unavailable,
-            },
-            SigType::Schnorr => match sat.lookup_raw_pkh_x_only_pk(pkh) {
-                Some(pk) => Witness::Stack(vec![pk.serialize().to_vec()]),
-                None => Witness::Unavailable,
-            },
-        }
-    }
-
-    /// Turn a key/signature pair related to a pkh into (part of) a satisfaction
-    fn pkh_signature<Pk: ToPublicKey, S: Satisfier<Pk>, Ctx: ScriptContext>(
-        sat: S,
-        pkh: &hash160::Hash,
-        leaf_hash: &TapLeafHash,
-    ) -> Self {
-        match Ctx::sig_type() {
-            SigType::Ecdsa => match sat.lookup_raw_pkh_ecdsa_sig(pkh) {
-                Some((pk, sig)) => {
-                    Witness::Stack(vec![sig.to_vec(), pk.to_public_key().to_bytes()])
+            super::context::SigType::Ecdsa => {
+                if sat.lookup_ecdsa_sig(pk) {
+                    Witness::Stack(vec![Placeholder::EcdsaSigPk(pk.clone())])
+                } else {
+                    // Signatures cannot be forged
+                    Witness::Impossible
                 }
-                None => Witness::Impossible,
-            },
-            SigType::Schnorr => match sat.lookup_raw_pkh_tap_leaf_script_sig(&(*pkh, *leaf_hash)) {
-                Some((pk, sig)) => Witness::Stack(vec![
-                    sig.to_vec(),
-                    pk.to_x_only_pubkey().serialize().to_vec(),
-                ]),
-                None => Witness::Impossible,
-            },
+            }
+            super::context::SigType::Schnorr => {
+                if let Some(size) = sat.lookup_tap_leaf_script_sig(pk, leaf_hash) {
+                    Witness::Stack(vec![Placeholder::SchnorrSig(
+                        pk.clone(),
+                        SchnorrSigType::ScriptSpend {
+                            leaf_hash: *leaf_hash,
+                        },
+                        size,
+                    )])
+                } else {
+                    // Signatures cannot be forged
+                    Witness::Impossible
+                }
+            }
         }
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn ripemd160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: &Pk::Ripemd160) -> Self {
-        match sat.lookup_ripemd160(h) {
-            Some(pre) => Witness::Stack(vec![pre.to_vec()]),
-            // Note hash preimages are unavailable instead of impossible
-            None => Witness::Unavailable,
+    fn ripemd160_preimage<S: AssetProvider<Pk>>(sat: &S, h: &Pk::Ripemd160) -> Self {
+        if sat.lookup_ripemd160(h) {
+            Witness::Stack(vec![Placeholder::Ripemd160Preimage(h.clone())])
+        // Note hash preimages are unavailable instead of impossible
+        } else {
+            Witness::Unavailable
         }
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn hash160_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: &Pk::Hash160) -> Self {
-        match sat.lookup_hash160(h) {
-            Some(pre) => Witness::Stack(vec![pre.to_vec()]),
-            // Note hash preimages are unavailable instead of impossible
-            None => Witness::Unavailable,
+    fn hash160_preimage<S: AssetProvider<Pk>>(sat: &S, h: &Pk::Hash160) -> Self {
+        if sat.lookup_hash160(h) {
+            Witness::Stack(vec![Placeholder::Hash160Preimage(h.clone())])
+        // Note hash preimages are unavailable instead of impossible
+        } else {
+            Witness::Unavailable
         }
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn sha256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: &Pk::Sha256) -> Self {
-        match sat.lookup_sha256(h) {
-            Some(pre) => Witness::Stack(vec![pre.to_vec()]),
-            // Note hash preimages are unavailable instead of impossible
-            None => Witness::Unavailable,
+    fn sha256_preimage<S: AssetProvider<Pk>>(sat: &S, h: &Pk::Sha256) -> Self {
+        if sat.lookup_sha256(h) {
+            Witness::Stack(vec![Placeholder::Sha256Preimage(h.clone())])
+        // Note hash preimages are unavailable instead of impossible
+        } else {
+            Witness::Unavailable
         }
     }
 
     /// Turn a hash preimage into (part of) a satisfaction
-    fn hash256_preimage<Pk: ToPublicKey, S: Satisfier<Pk>>(sat: S, h: &Pk::Hash256) -> Self {
-        match sat.lookup_hash256(h) {
-            Some(pre) => Witness::Stack(vec![pre.to_vec()]),
-            // Note hash preimages are unavailable instead of impossible
-            None => Witness::Unavailable,
+    fn hash256_preimage<S: AssetProvider<Pk>>(sat: &S, h: &Pk::Hash256) -> Self {
+        if sat.lookup_hash256(h) {
+            Witness::Stack(vec![Placeholder::Hash256Preimage(h.clone())])
+        // Note hash preimages are unavailable instead of impossible
+        } else {
+            Witness::Unavailable
         }
     }
 }
 
-impl Witness {
+impl<Pk: MiniscriptKey> Witness<Placeholder<Pk>> {
     /// Produce something like a 32-byte 0 push
     fn hash_dissatisfaction() -> Self {
-        Witness::Stack(vec![vec![0; 32]])
+        Witness::Stack(vec![Placeholder::HashDissatisfaction])
     }
 
     /// Construct a satisfaction equivalent to an empty stack
@@ -686,12 +625,12 @@ impl Witness {
 
     /// Construct a satisfaction equivalent to `OP_1`
     fn push_1() -> Self {
-        Witness::Stack(vec![vec![1]])
+        Witness::Stack(vec![Placeholder::PushOne])
     }
 
     /// Construct a satisfaction equivalent to a single empty push
     fn push_0() -> Self {
-        Witness::Stack(vec![vec![]])
+        Witness::Stack(vec![Placeholder::PushZero])
     }
 
     /// Concatenate, or otherwise combine, two satisfactions
@@ -709,9 +648,9 @@ impl Witness {
 
 /// A (dis)satisfaction of a Miniscript fragment
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Satisfaction {
+pub struct Satisfaction<T> {
     /// The actual witness stack
-    pub stack: Witness,
+    pub stack: Witness<T>,
     /// Whether or not this (dis)satisfaction has a signature somewhere
     /// in it
     pub has_sig: bool,
@@ -723,9 +662,49 @@ pub struct Satisfaction {
     pub relative_timelock: Option<Sequence>,
 }
 
-impl Satisfaction {
+impl<Pk: MiniscriptKey + ToPublicKey> Satisfaction<Placeholder<Pk>> {
+    pub(crate) fn build_template<P, Ctx>(
+        term: &Terminal<Pk, Ctx>,
+        provider: &P,
+        root_has_sig: bool,
+        leaf_hash: &TapLeafHash,
+    ) -> Self
+    where
+        Ctx: ScriptContext,
+        P: AssetProvider<Pk>,
+    {
+        Self::satisfy_helper(
+            term,
+            provider,
+            root_has_sig,
+            leaf_hash,
+            &mut Satisfaction::minimum,
+            &mut Satisfaction::thresh,
+        )
+    }
+
+    pub(crate) fn build_template_mall<P, Ctx>(
+        term: &Terminal<Pk, Ctx>,
+        provider: &P,
+        root_has_sig: bool,
+        leaf_hash: &TapLeafHash,
+    ) -> Self
+    where
+        Ctx: ScriptContext,
+        P: AssetProvider<Pk>,
+    {
+        Self::satisfy_helper(
+            term,
+            provider,
+            root_has_sig,
+            leaf_hash,
+            &mut Satisfaction::minimum_mall,
+            &mut Satisfaction::thresh_mall,
+        )
+    }
+
     // produce a non-malleable satisafaction for thesh frag
-    fn thresh<Pk, Ctx, Sat, F>(
+    fn thresh<Ctx, Sat, F>(
         k: usize,
         subs: &[Arc<Miniscript<Pk, Ctx>>],
         stfr: &Sat,
@@ -734,10 +713,12 @@ impl Satisfaction {
         min_fn: &mut F,
     ) -> Self
     where
-        Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
-        Sat: Satisfier<Pk>,
-        F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
+        Sat: AssetProvider<Pk>,
+        F: FnMut(
+            Satisfaction<Placeholder<Pk>>,
+            Satisfaction<Placeholder<Pk>>,
+        ) -> Satisfaction<Placeholder<Pk>>,
     {
         let mut sats = subs
             .iter()
@@ -855,7 +836,7 @@ impl Satisfaction {
     }
 
     // produce a possily malleable satisafaction for thesh frag
-    fn thresh_mall<Pk, Ctx, Sat, F>(
+    fn thresh_mall<Ctx, Sat, F>(
         k: usize,
         subs: &[Arc<Miniscript<Pk, Ctx>>],
         stfr: &Sat,
@@ -864,10 +845,12 @@ impl Satisfaction {
         min_fn: &mut F,
     ) -> Self
     where
-        Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
-        Sat: Satisfier<Pk>,
-        F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
+        Sat: AssetProvider<Pk>,
+        F: FnMut(
+            Satisfaction<Placeholder<Pk>>,
+            Satisfaction<Placeholder<Pk>>,
+        ) -> Satisfaction<Placeholder<Pk>>,
     {
         let mut sats = subs
             .iter()
@@ -1012,7 +995,7 @@ impl Satisfaction {
     }
 
     // produce a non-malleable satisfaction
-    fn satisfy_helper<Pk, Ctx, Sat, F, G>(
+    fn satisfy_helper<Ctx, Sat, F, G>(
         term: &Terminal<Pk, Ctx>,
         stfr: &Sat,
         root_has_sig: bool,
@@ -1021,10 +1004,12 @@ impl Satisfaction {
         thresh_fn: &mut G,
     ) -> Self
     where
-        Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
-        Sat: Satisfier<Pk>,
-        F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
+        Sat: AssetProvider<Pk>,
+        F: FnMut(
+            Satisfaction<Placeholder<Pk>>,
+            Satisfaction<Placeholder<Pk>>,
+        ) -> Satisfaction<Placeholder<Pk>>,
         G: FnMut(
             usize,
             &[Arc<Miniscript<Pk, Ctx>>],
@@ -1032,30 +1017,29 @@ impl Satisfaction {
             bool,
             &TapLeafHash,
             &mut F,
-        ) -> Satisfaction,
+        ) -> Satisfaction<Placeholder<Pk>>,
     {
         match *term {
             Terminal::PkK(ref pk) => Satisfaction {
-                stack: Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash),
+                stack: Witness::signature::<_, Ctx>(stfr, pk, leaf_hash),
                 has_sig: true,
                 relative_timelock: None,
                 absolute_timelock: None,
             },
             Terminal::PkH(ref pk) => {
-                let wit = Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash);
-                let pk_bytes = match Ctx::sig_type() {
-                    SigType::Ecdsa => pk.to_public_key().to_bytes(),
-                    SigType::Schnorr => pk.to_x_only_pubkey().serialize().to_vec(),
-                };
+                let wit = Witness::signature::<_, Ctx>(stfr, pk, leaf_hash);
                 Satisfaction {
-                    stack: Witness::combine(wit, Witness::Stack(vec![pk_bytes])),
+                    stack: Witness::combine(
+                        wit,
+                        Witness::Stack(vec![Placeholder::Pubkey(pk.clone(), Ctx::pk_len(pk))]),
+                    ),
                     has_sig: true,
                     relative_timelock: None,
                     absolute_timelock: None,
                 }
             }
-            Terminal::RawPkH(ref pkh) => Satisfaction {
-                stack: Witness::pkh_signature::<_, _, Ctx>(stfr, pkh, leaf_hash),
+            Terminal::RawPkH(_) => Satisfaction {
+                stack: Witness::Unavailable,
                 has_sig: true,
                 relative_timelock: None,
                 absolute_timelock: None,
@@ -1304,7 +1288,7 @@ impl Satisfaction {
                 let mut sig_count = 0;
                 let mut sigs = Vec::with_capacity(k);
                 for pk in keys {
-                    match Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash) {
+                    match Witness::signature::<_, Ctx>(stfr, pk, leaf_hash) {
                         Witness::Stack(sig) => {
                             sigs.push(sig);
                             sig_count += 1;
@@ -1348,9 +1332,9 @@ impl Satisfaction {
             Terminal::MultiA(k, ref keys) => {
                 // Collect all available signatures
                 let mut sig_count = 0;
-                let mut sigs = vec![vec![vec![]]; keys.len()];
+                let mut sigs = vec![vec![Placeholder::PushZero]; keys.len()];
                 for (i, pk) in keys.iter().rev().enumerate() {
-                    match Witness::signature::<_, _, Ctx>(stfr, pk, leaf_hash) {
+                    match Witness::signature::<_, Ctx>(stfr, pk, leaf_hash) {
                         Witness::Stack(sig) => {
                             sigs[i] = sig;
                             sig_count += 1;
@@ -1391,7 +1375,7 @@ impl Satisfaction {
     }
 
     // Helper function to produce a dissatisfaction
-    fn dissatisfy_helper<Pk, Ctx, Sat, F, G>(
+    fn dissatisfy_helper<Ctx, Sat, F, G>(
         term: &Terminal<Pk, Ctx>,
         stfr: &Sat,
         root_has_sig: bool,
@@ -1400,10 +1384,12 @@ impl Satisfaction {
         thresh_fn: &mut G,
     ) -> Self
     where
-        Pk: MiniscriptKey + ToPublicKey,
         Ctx: ScriptContext,
-        Sat: Satisfier<Pk>,
-        F: FnMut(Satisfaction, Satisfaction) -> Satisfaction,
+        Sat: AssetProvider<Pk>,
+        F: FnMut(
+            Satisfaction<Placeholder<Pk>>,
+            Satisfaction<Placeholder<Pk>>,
+        ) -> Satisfaction<Placeholder<Pk>>,
         G: FnMut(
             usize,
             &[Arc<Miniscript<Pk, Ctx>>],
@@ -1411,7 +1397,7 @@ impl Satisfaction {
             bool,
             &TapLeafHash,
             &mut F,
-        ) -> Satisfaction,
+        ) -> Satisfaction<Placeholder<Pk>>,
     {
         match *term {
             Terminal::PkK(..) => Satisfaction {
@@ -1420,23 +1406,17 @@ impl Satisfaction {
                 relative_timelock: None,
                 absolute_timelock: None,
             },
-            Terminal::PkH(ref pk) => {
-                let pk_bytes = match Ctx::sig_type() {
-                    SigType::Ecdsa => pk.to_public_key().to_bytes(),
-                    SigType::Schnorr => pk.to_x_only_pubkey().serialize().to_vec(),
-                };
-                Satisfaction {
-                    stack: Witness::combine(Witness::push_0(), Witness::Stack(vec![pk_bytes])),
-                    has_sig: false,
-                    relative_timelock: None,
-                    absolute_timelock: None,
-                }
-            }
-            Terminal::RawPkH(ref pkh) => Satisfaction {
+            Terminal::PkH(ref pk) => Satisfaction {
                 stack: Witness::combine(
                     Witness::push_0(),
-                    Witness::pkh_public_key::<_, _, Ctx>(stfr, pkh),
+                    Witness::Stack(vec![Placeholder::Pubkey(pk.clone(), Ctx::pk_len(pk))]),
                 ),
+                has_sig: false,
+                relative_timelock: None,
+                absolute_timelock: None,
+            },
+            Terminal::RawPkH(_) => Satisfaction {
+                stack: Witness::Unavailable,
                 has_sig: false,
                 relative_timelock: None,
                 absolute_timelock: None,
@@ -1595,13 +1575,13 @@ impl Satisfaction {
                 absolute_timelock: None,
             },
             Terminal::Multi(k, _) => Satisfaction {
-                stack: Witness::Stack(vec![vec![]; k + 1]),
+                stack: Witness::Stack(vec![Placeholder::PushZero; k + 1]),
                 has_sig: false,
                 relative_timelock: None,
                 absolute_timelock: None,
             },
             Terminal::MultiA(_, ref pks) => Satisfaction {
-                stack: Witness::Stack(vec![vec![]; pks.len()]),
+                stack: Witness::Stack(vec![Placeholder::PushZero; pks.len()]),
                 has_sig: false,
                 relative_timelock: None,
                 absolute_timelock: None,
@@ -1609,45 +1589,65 @@ impl Satisfaction {
         }
     }
 
+    /// Try creating the final witness using a [`Satisfier`]
+    pub fn try_completing<Sat: Satisfier<Pk>>(&self, stfr: &Sat) -> Option<Satisfaction<Vec<u8>>> {
+        let Satisfaction {
+            stack,
+            has_sig,
+            relative_timelock,
+            absolute_timelock,
+        } = self;
+        let stack = match stack {
+            Witness::Stack(stack) => Witness::Stack(
+                stack
+                    .iter()
+                    .map(|placeholder| placeholder.satisfy_self(stfr))
+                    .collect::<Option<_>>()?,
+            ),
+            Witness::Unavailable => Witness::Unavailable,
+            Witness::Impossible => Witness::Impossible,
+        };
+        Some(Satisfaction {
+            stack,
+            has_sig: *has_sig,
+            relative_timelock: *relative_timelock,
+            absolute_timelock: *absolute_timelock,
+        })
+    }
+}
+
+impl Satisfaction<Vec<u8>> {
     /// Produce a satisfaction non-malleable satisfaction
-    pub(super) fn satisfy<
-        Pk: MiniscriptKey + ToPublicKey,
-        Ctx: ScriptContext,
-        Sat: Satisfier<Pk>,
-    >(
+    pub(super) fn satisfy<Ctx, Pk, Sat>(
         term: &Terminal<Pk, Ctx>,
         stfr: &Sat,
         root_has_sig: bool,
         leaf_hash: &TapLeafHash,
-    ) -> Self {
-        Self::satisfy_helper(
-            term,
-            stfr,
-            root_has_sig,
-            leaf_hash,
-            &mut Satisfaction::minimum,
-            &mut Satisfaction::thresh,
-        )
+    ) -> Self
+    where
+        Ctx: ScriptContext,
+        Pk: MiniscriptKey + ToPublicKey,
+        Sat: Satisfier<Pk>,
+    {
+        Satisfaction::<Placeholder<Pk>>::build_template(term, &stfr, root_has_sig, leaf_hash)
+            .try_completing(stfr)
+            .expect("the same satisfier should manage to complete the template")
     }
 
     /// Produce a satisfaction(possibly malleable)
-    pub(super) fn satisfy_mall<
-        Pk: MiniscriptKey + ToPublicKey,
-        Ctx: ScriptContext,
-        Sat: Satisfier<Pk>,
-    >(
+    pub(super) fn satisfy_mall<Ctx, Pk, Sat>(
         term: &Terminal<Pk, Ctx>,
         stfr: &Sat,
         root_has_sig: bool,
         leaf_hash: &TapLeafHash,
-    ) -> Self {
-        Self::satisfy_helper(
-            term,
-            stfr,
-            root_has_sig,
-            leaf_hash,
-            &mut Satisfaction::minimum_mall,
-            &mut Satisfaction::thresh_mall,
-        )
+    ) -> Self
+    where
+        Ctx: ScriptContext,
+        Pk: MiniscriptKey + ToPublicKey,
+        Sat: Satisfier<Pk>,
+    {
+        Satisfaction::<Placeholder<Pk>>::build_template_mall(term, &stfr, root_has_sig, leaf_hash)
+            .try_completing(stfr)
+            .expect("the same satisfier should manage to complete the template")
     }
 }

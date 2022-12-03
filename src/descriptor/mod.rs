@@ -1837,4 +1837,37 @@ pk(03f28773c2d975288bc7d1d205c3748651b075fbc6610e58cddeeddf8f19405aa8))";
             "tr(020000000000000000000000000000000000000000000000000000000000000002)",
         );
     }
+
+    #[test]
+    fn test_issue_494() {
+        let bkp0_root_private = bip32::ExtendedPrivKey::from_str("tprv8ZgxMBicQKsPerMTN7nhwCpqaAEPkaBCDeE8c9ekAY1xhPmF3HM9r3oz33V8JTwsJYp9FYLDQumLzNssLo6UNMNesVwPP1KcgA5atrSqU2w").unwrap();
+        let index = 0;
+        let secp = secp256k1::Secp256k1::signing_only();
+        let bkp0_derived_private = bkp0_root_private
+            .derive_priv(
+                &secp,
+                &bip32::DerivationPath::from_str(format!("m/84'/1'/1/0/{index}").as_str()).unwrap(),
+            )
+            .unwrap();
+        let bkp0_derived_public = bip32::ExtendedPubKey::from_priv(&secp, &bkp0_derived_private);
+        println!("Public backup key 0 {}", bkp0_derived_public.to_pub());
+
+        let desc_str = "wsh(t:or_c(pk(02a7d30ac6b0cd55b6868f5a65aff1dbdaa18f4315fe04de809fffb2899340ae0f),v:multi(1,[255f0d9b/84'/1'/1/0]tprv8ZgxMBicQKsPerMTN7nhwCpqaAEPkaBCDeE8c9ekAY1xhPmF3HM9r3oz33V8JTwsJYp9FYLDQumLzNssLo6UNMNesVwPP1KcgA5atrSqU2w/84'/1'/1/0/*,02f17cce1778c101e3b0ac5c76997af3752b0a221b1ebffc23af679328f3f5d6fc,02350b5a9a12df96579d150f3f751de416e58a67f2ba9bc99f6964b7a48a79042b)))";
+
+        let (desc, keys) = Descriptor::parse_descriptor(&secp, desc_str).unwrap();
+
+        if keys.len() < 1 {
+            panic!("No keys found");
+        };
+
+        for (public, private) in &keys {
+            println!("{}", &public.full_derivation_path().to_string());
+            println!("{}", private);
+            let child = public.clone().at_derivation_index(0);
+            println!("{}", child);
+            println!("{}", child.full_derivation_path().to_string());
+            println!("{}", child.to_public_key());
+            // 033ccfac7a489dae032426f2abd8b61d29fc1593a84ad1fd4eb9dae6ef1c8114af
+        }
+    }
 }

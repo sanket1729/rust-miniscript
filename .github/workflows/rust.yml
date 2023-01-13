@@ -56,7 +56,6 @@ jobs:
           - rust: stable
           - rust: beta
           - rust: nightly
-          - rust: 1.41.1
           - rust: 1.47
     steps:
       - name: Checkout Crate

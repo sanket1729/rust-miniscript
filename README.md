@@ -1,6 +1,6 @@
 ![Build](https://github.com/rust-bitcoin/rust-miniscript/workflows/Continuous%20integration/badge.svg)
 
-**Minimum Supported Rust Version:** 1.41.1
+**Minimum Supported Rust Version:** 1.47
 
 # Miniscript
 
@@ -35,15 +35,13 @@ or in [the `examples/` directory](https://github.com/apoelstra/rust-miniscript/t
 
 
 ## Minimum Supported Rust Version (MSRV)
-This library should always compile with any combination of features (minus
-`no-std`) on **Rust 1.41.1** or **Rust 1.47** with `no-std`.
+This library should always compile with any combination of features on **Rust 1.47**.
 
 Some dependencies do not play nicely with our MSRV, if you are running the tests
 you may need to pin as follows:
 
 ```
-cargo update --package url --precise 2.2.2
-cargo update --package form_urlencoded --precise 1.0.1
+cargo update -p once_cell --precise 1.13.1
 ```
 
 ## Contributing

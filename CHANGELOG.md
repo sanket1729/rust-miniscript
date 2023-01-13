@@ -1,3 +1,9 @@
+# 10.x.x - Unreleased
+
+This release contains several significant API overhauls, as well as a bump
+of our MSRV from 1.41.1 to 1.47. Users are encouraged to update their compiler
+to 1.47 *before* updating to this version.
+
 # 9.0.0 - November 5, 2022
 
 - Fixed a bug dealing with dissatisfying pkh inside thresh

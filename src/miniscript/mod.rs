@@ -1142,4 +1142,21 @@ mod tests {
         t.pk_map.insert(String::from("A"), uncompressed);
         ms.translate_pk(&mut t).unwrap_err();
     }
+
+    #[test]
+    fn test_satisfy_thresh() {
+        let pk_str = "0369b9d8da2f8b2ddc9ce9bfaa1a3e56a7b628fcb46fc1d3f6fce6aad636268d18";
+        let ms = Miniscript::<bitcoin::PublicKey, Segwitv0>::from_str_insane(&format!(
+            "thresh(1,pk({}),sln:older(9))",
+            pk_str
+        ))
+        .unwrap();
+        let mut satisfier = HashMap::new();
+        let key = bitcoin::PublicKey::from_str(pk_str).unwrap();
+        // This is not a valid signature for this key, but that does not matter for this test.
+        let sig = bitcoin::ecdsa::Signature::from_str("3045022100e5af37c22869a84d53331ef84f9a8d2c5875464e2dd3529177f83eb271cc5f570220405c8ef768b8e8a04fe08e537c24b546523fd84733b6a889d6676c252fca45d101").unwrap();
+        satisfier.insert(key, sig);
+        let sat = ms.satisfy(satisfier).unwrap();
+        assert_eq!(sat, vec![vec![1], sig.serialize().to_vec()]);
+    }
 }

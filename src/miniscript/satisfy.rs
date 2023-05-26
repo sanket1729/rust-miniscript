@@ -671,6 +671,18 @@ impl Witness {
             None => Witness::Unavailable,
         }
     }
+
+    /// Returns `true` if the witness is [`Stack`].
+    ///
+    /// [`Stack`]: Witness::Stack
+    #[must_use]
+    pub fn is_available(&self) -> bool {
+        if let Witness::Stack(_) = self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl Witness {
@@ -775,13 +787,18 @@ impl Satisfaction {
                     witness_size(s) as i64 - witness_size(d) as i64
                 }
             };
-            let is_impossible = sats[i].stack == Witness::Impossible;
-            // First consider the candidates that are not impossible to satisfy
+            let can_satisfy = if let Witness::Stack(..) = sats[i].stack {
+                true
+            } else {
+                false
+            };
+            // First consider the candidates that are possible to satisfy
             // by any party. Among those first consider the ones that have no sig
             // because third party can malleate them if they are not chosen.
             // Lastly, choose by weight.
-            (is_impossible, sats[i].has_sig, stack_weight)
+            (!can_satisfy, sats[i].has_sig, stack_weight)
         });
+        dbg!(&sat_indices);
 
         for i in 0..k {
             mem::swap(&mut ret_stack[sat_indices[i]], &mut sats[sat_indices[i]]);
@@ -812,7 +829,7 @@ impl Satisfaction {
         // for the 0 fragment
         else if k < sat_indices.len()
             && !sats[sat_indices[k]].has_sig
-            && sats[sat_indices[k]].stack != Witness::Impossible
+            && sats[sat_indices[k]].stack.is_available()
         {
             // All arguments should be `d`, so dissatisfactions have no
             // signatures; and in this branch we assume too many weak

@@ -14,20 +14,17 @@ use bitcoin::hashes::{hash160, Hash};
 use bitcoin::{absolute, opcodes, script, Sequence};
 use sync::Arc;
 
-use crate::miniscript::context::SigType;
-use crate::miniscript::types::{self, Property};
-use crate::miniscript::ScriptContext;
+use super::types::ScriptContextEnum;
+use super::MsUnChecked;
 use crate::prelude::*;
 use crate::util::MsKeyBuilder;
-use crate::{
-    errstr, expression, AbsLockTime, Error, Miniscript, MiniscriptKey, Terminal, ToPublicKey,
-};
+use crate::{errstr, expression, AbsLockTime, Error, MiniscriptKey, Terminal, ToPublicKey};
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
+impl<Pk: MiniscriptKey> Terminal<Pk> {
     /// Internal helper function for displaying wrapper types; returns
     /// a character to display before the `:` as well as a reference
     /// to the wrapped type to allow easy recursion
-    fn wrap_char(&self) -> Option<(char, &Arc<Miniscript<Pk, Ctx>>)> {
+    fn wrap_char(&self) -> Option<(char, &Arc<MsUnChecked<Pk>>)> {
         match *self {
             Terminal::Alt(ref sub) => Some(('a', sub)),
             Terminal::Swap(ref sub) => Some(('s', sub)),
@@ -44,45 +41,46 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
+impl<Pk: MiniscriptKey> fmt::Debug for Terminal<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("[")?;
-        if let Ok(type_map) = types::Type::type_check(self) {
-            f.write_str(match type_map.corr.base {
-                types::Base::B => "B",
-                types::Base::K => "K",
-                types::Base::V => "V",
-                types::Base::W => "W",
-            })?;
-            fmt::Write::write_char(f, '/')?;
-            f.write_str(match type_map.corr.input {
-                types::Input::Zero => "z",
-                types::Input::One => "o",
-                types::Input::OneNonZero => "on",
-                types::Input::Any => "",
-                types::Input::AnyNonZero => "n",
-            })?;
-            if type_map.corr.dissatisfiable {
-                fmt::Write::write_char(f, 'd')?;
-            }
-            if type_map.corr.unit {
-                fmt::Write::write_char(f, 'u')?;
-            }
-            f.write_str(match type_map.mall.dissat {
-                types::Dissat::None => "f",
-                types::Dissat::Unique => "e",
-                types::Dissat::Unknown => "",
-            })?;
-            if type_map.mall.safe {
-                fmt::Write::write_char(f, 's')?;
-            }
-            if type_map.mall.non_malleable {
-                fmt::Write::write_char(f, 'm')?;
-            }
-        } else {
-            f.write_str("TYPECHECK FAILED")?;
-        }
-        f.write_str("]")?;
+        // No type checking in display for terminal.
+        // f.write_str("[")?;
+        // if let Ok(type_map) = types::Type::type_check(self) {
+        //     f.write_str(match type_map.corr.base {
+        //         types::Base::B => "B",
+        //         types::Base::K => "K",
+        //         types::Base::V => "V",
+        //         types::Base::W => "W",
+        //     })?;
+        //     fmt::Write::write_char(f, '/')?;
+        //     f.write_str(match type_map.corr.input {
+        //         types::Input::Zero => "z",
+        //         types::Input::One => "o",
+        //         types::Input::OneNonZero => "on",
+        //         types::Input::Any => "",
+        //         types::Input::AnyNonZero => "n",
+        //     })?;
+        //     if type_map.corr.dissatisfiable {
+        //         fmt::Write::write_char(f, 'd')?;
+        //     }
+        //     if type_map.corr.unit {
+        //         fmt::Write::write_char(f, 'u')?;
+        //     }
+        //     f.write_str(match type_map.mall.dissat {
+        //         types::Dissat::None => "f",
+        //         types::Dissat::Unique => "e",
+        //         types::Dissat::Unknown => "",
+        //     })?;
+        //     if type_map.mall.safe {
+        //         fmt::Write::write_char(f, 's')?;
+        //     }
+        //     if type_map.mall.non_malleable {
+        //         fmt::Write::write_char(f, 'm')?;
+        //     }
+        // } else {
+        //     f.write_str("TYPECHECK FAILED")?;
+        // }
+        // f.write_str("]")?;
         if let Some((ch, sub)) = self.wrap_char() {
             fmt::Write::write_char(f, ch)?;
             if sub.node.wrap_char().is_none() {
@@ -142,7 +140,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Terminal<Pk, Ctx> {
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
+impl<Pk: MiniscriptKey> fmt::Display for Terminal<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Terminal::PkK(ref pk) => write!(f, "pk_k({})", pk),
@@ -241,18 +239,20 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Terminal<Pk, Ctx> {
     }
 }
 
-impl_from_tree!(
-    ;Ctx; ScriptContext,
-    Arc<Terminal<Pk, Ctx>>,
-    fn from_tree(top: &expression::Tree) -> Result<Arc<Terminal<Pk, Ctx>>, Error> {
-        Ok(Arc::new(expression::FromTree::from_tree(top)?))
-    }
-);
+// impl_block_str!(
+//     Arc<Terminal<Pk>>,
+//     fn from_tree_with_ctx(top: &expression::Tree, ctx: ScriptContextEnum,) -> Result<Arc<Terminal<Pk>>, Error> {
+//         Ok(Arc::new(expression::FromTree::from_tree_with_ctx(top, ctx)?))
+//     }
+// );
 
-impl_from_tree!(
-    ;Ctx; ScriptContext,
-    Terminal<Pk, Ctx>,
-    fn from_tree(top: &expression::Tree) -> Result<Terminal<Pk, Ctx>, Error> {
+impl_block_str!(
+    Terminal<Pk>,
+    /// Doc
+    pub fn from_tree_with_ctx(top: &expression::Tree, ctx: ScriptContextEnum,) -> Result<Terminal<Pk>, Error> {
+        // fn binary<Pk: MiniscriptKey, F>(top: &expression::Tree, ctx: ScriptContextEnum, convert: F) -> Result<Terminal<Pk>, Error>
+        // where F: FnOnce(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>) -> Result<Terminal<Pk>, Error>,
+        
         let mut aliased_wrap;
         let frag_name;
         let frag_wrap;
@@ -304,9 +304,13 @@ impl_from_tree!(
             ("pk_k", 1) => {
                 expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkK))
             }
-            ("pk_h", 1) => expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH)),
+            ("pk_h", 1) => {
+                expression::terminal(&top.args[0], |x| Pk::from_str(x).map(Terminal::PkH))
+            }
             ("after", 1) => expression::terminal(&top.args[0], |x| {
-                expression::parse_num(x).map(|x| Terminal::After(AbsLockTime::from(absolute::LockTime::from_consensus(x))))
+                expression::parse_num(x).map(|x| {
+                    Terminal::After(AbsLockTime::from(absolute::LockTime::from_consensus(x)))
+                })
             }),
             ("older", 1) => expression::terminal(&top.args[0], |x| {
                 expression::parse_num(x).map(|x| Terminal::Older(Sequence::from_consensus(x)))
@@ -325,22 +329,40 @@ impl_from_tree!(
             }),
             ("1", 0) => Ok(Terminal::True),
             ("0", 0) => Ok(Terminal::False),
-            ("and_v", 2) => expression::binary(top, Terminal::AndV),
-            ("and_b", 2) => expression::binary(top, Terminal::AndB),
+            ("and_v", 2) => Ok(Terminal::AndV(
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[0], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[1], ctx)?)
+            )),
+            ("and_b", 2) => Ok(Terminal::AndB(
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[0], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[1], ctx)?)
+            )),
             ("and_n", 2) => Ok(Terminal::AndOr(
-                expression::FromTree::from_tree(&top.args[0])?,
-                expression::FromTree::from_tree(&top.args[1])?,
-                Arc::new(Miniscript::from_ast(Terminal::False)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[0], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[1], ctx)?),
+                Arc::new(MsUnChecked::from_ast(Terminal::False, ctx)?),
             )),
             ("andor", 3) => Ok(Terminal::AndOr(
-                expression::FromTree::from_tree(&top.args[0])?,
-                expression::FromTree::from_tree(&top.args[1])?,
-                expression::FromTree::from_tree(&top.args[2])?,
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[0], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[1], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[2], ctx)?),
             )),
-            ("or_b", 2) => expression::binary(top, Terminal::OrB),
-            ("or_d", 2) => expression::binary(top, Terminal::OrD),
-            ("or_c", 2) => expression::binary(top, Terminal::OrC),
-            ("or_i", 2) => expression::binary(top, Terminal::OrI),
+            ("or_b", 2) => Ok(Terminal::OrB(
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[0], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[1], ctx)?)
+            )),
+            ("or_d", 2) => Ok(Terminal::OrD(
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[0], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[1], ctx)?)
+            )),
+            ("or_c", 2) => Ok(Terminal::OrC(
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[0], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[1], ctx)?)
+            )),
+            ("or_i", 2) => Ok(Terminal::OrI(
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[0], ctx)?),
+                Arc::new(MsUnChecked::from_tree_with_ctx(&top.args[1], ctx)?)
+            )),
             ("thresh", n) => {
                 if n == 0 {
                     return Err(errstr("no arguments given"));
@@ -353,9 +375,9 @@ impl_from_tree!(
                     return Err(errstr("empty thresholds not allowed in descriptors"));
                 }
 
-                let subs: Result<Vec<Arc<Miniscript<Pk, Ctx>>>, _> = top.args[1..]
+                let subs: Result<Vec<Arc<MsUnChecked<Pk>>>, _> = top.args[1..]
                     .iter()
-                    .map(expression::FromTree::from_tree)
+                    .map(|elem| MsUnChecked::from_tree_with_ctx(elem, ctx).map(Arc::new))
                     .collect();
 
                 Ok(Terminal::Thresh(k, subs?))
@@ -389,8 +411,8 @@ impl_from_tree!(
         }?;
         for ch in frag_wrap.chars().rev() {
             // Check whether the wrapper is valid under the current context
-            let ms = Miniscript::from_ast(unwrapped)?;
-            Ctx::check_global_validity(&ms)?;
+            let ms = MsUnChecked::from_ast(unwrapped, ctx)?;
+            // Ctx::check_global_validity(&ms)?;
             match ch {
                 'a' => unwrapped = Terminal::Alt(Arc::new(ms)),
                 's' => unwrapped = Terminal::Swap(Arc::new(ms)),
@@ -402,13 +424,13 @@ impl_from_tree!(
                 't' => {
                     unwrapped = Terminal::AndV(
                         Arc::new(ms),
-                        Arc::new(Miniscript::from_ast(Terminal::True)?),
+                        Arc::new(MsUnChecked::from_ast(Terminal::True, ctx)?),
                     )
                 }
                 'u' => {
                     unwrapped = Terminal::OrI(
                         Arc::new(ms),
-                        Arc::new(Miniscript::from_ast(Terminal::False)?),
+                        Arc::new(MsUnChecked::from_ast(Terminal::False, ctx)?),
                     )
                 }
                 'l' => {
@@ -416,7 +438,7 @@ impl_from_tree!(
                         return Err(Error::LikelyFalse);
                     }
                     unwrapped = Terminal::OrI(
-                        Arc::new(Miniscript::from_ast(Terminal::False)?),
+                        Arc::new(MsUnChecked::from_ast(Terminal::False, ctx)?),
                         Arc::new(ms),
                     )
                 }
@@ -424,42 +446,43 @@ impl_from_tree!(
             }
         }
         // Check whether the unwrapped miniscript is valid under the current context
-        let ms = Miniscript::from_ast(unwrapped)?;
-        Ctx::check_global_validity(&ms)?;
-        Ok(ms.node)
+        // let ms = MsUnChecked::from_ast(unwrapped)?;
+        // Ctx::check_global_validity(&ms)?;
+        Ok(unwrapped)
     }
 );
 
 /// Helper trait to add a `push_astelem` method to `script::Builder`
-trait PushAstElem<Pk: MiniscriptKey, Ctx: ScriptContext> {
-    fn push_astelem(self, ast: &Miniscript<Pk, Ctx>) -> Self
+trait PushAstElem<Pk: MiniscriptKey> {
+    fn push_astelem(self, ast: &MsUnChecked<Pk>, ctx: ScriptContextEnum) -> Self
     where
         Pk: ToPublicKey;
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> PushAstElem<Pk, Ctx> for script::Builder {
-    fn push_astelem(self, ast: &Miniscript<Pk, Ctx>) -> Self
+impl<Pk: MiniscriptKey> PushAstElem<Pk> for script::Builder {
+    fn push_astelem(self, ast: &MsUnChecked<Pk>, ctx: ScriptContextEnum) -> Self
     where
         Pk: ToPublicKey,
     {
-        ast.node.encode(self)
+        ast.node.encode_with_ctx(self, ctx)
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
-    /// Encode the element as a fragment of Bitcoin Script. The inverse
-    /// function, from Script to an AST element, is implemented in the
+impl<Pk: MiniscriptKey> Terminal<Pk> {
+    /// Encode the element as a fragment of Bitcoin Script under the given ScriptContext.
+    ///
+    /// The inverse function, from Script to an AST element, is implemented in the
     /// `parse` module.
-    pub fn encode(&self, mut builder: script::Builder) -> script::Builder
+    pub fn encode_with_ctx(&self, mut builder: script::Builder, ctx: ScriptContextEnum) -> script::Builder
     where
         Pk: ToPublicKey,
     {
         match *self {
-            Terminal::PkK(ref pk) => builder.push_ms_key::<_, Ctx>(pk),
+            Terminal::PkK(ref pk) => builder.push_ms_key(pk, ctx),
             Terminal::PkH(ref pk) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_HASH160)
-                .push_ms_key_hash::<_, Ctx>(pk)
+                .push_ms_key_hash(pk, ctx)
                 .push_opcode(opcodes::all::OP_EQUALVERIFY),
             Terminal::RawPkH(ref hash) => builder
                 .push_opcode(opcodes::all::OP_DUP)
@@ -504,71 +527,73 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
             Terminal::False => builder.push_opcode(opcodes::OP_FALSE),
             Terminal::Alt(ref sub) => builder
                 .push_opcode(opcodes::all::OP_TOALTSTACK)
-                .push_astelem(sub)
+                .push_astelem(sub, ctx)
                 .push_opcode(opcodes::all::OP_FROMALTSTACK),
-            Terminal::Swap(ref sub) => builder.push_opcode(opcodes::all::OP_SWAP).push_astelem(sub),
+            Terminal::Swap(ref sub) => builder.push_opcode(opcodes::all::OP_SWAP).push_astelem(sub, ctx),
             Terminal::Check(ref sub) => builder
-                .push_astelem(sub)
+                .push_astelem(sub, ctx)
                 .push_opcode(opcodes::all::OP_CHECKSIG),
             Terminal::DupIf(ref sub) => builder
                 .push_opcode(opcodes::all::OP_DUP)
                 .push_opcode(opcodes::all::OP_IF)
-                .push_astelem(sub)
+                .push_astelem(sub, ctx)
                 .push_opcode(opcodes::all::OP_ENDIF),
-            Terminal::Verify(ref sub) => builder.push_astelem(sub).push_verify(),
+            Terminal::Verify(ref sub) => builder.push_astelem(sub, ctx).push_verify(),
             Terminal::NonZero(ref sub) => builder
                 .push_opcode(opcodes::all::OP_SIZE)
                 .push_opcode(opcodes::all::OP_0NOTEQUAL)
                 .push_opcode(opcodes::all::OP_IF)
-                .push_astelem(sub)
+                .push_astelem(sub, ctx)
                 .push_opcode(opcodes::all::OP_ENDIF),
             Terminal::ZeroNotEqual(ref sub) => builder
-                .push_astelem(sub)
+                .push_astelem(sub, ctx)
                 .push_opcode(opcodes::all::OP_0NOTEQUAL),
-            Terminal::AndV(ref left, ref right) => builder.push_astelem(left).push_astelem(right),
+            Terminal::AndV(ref left, ref right) => builder.push_astelem(left, ctx).push_astelem(right, ctx),
             Terminal::AndB(ref left, ref right) => builder
-                .push_astelem(left)
-                .push_astelem(right)
+                .push_astelem(left, ctx)
+                .push_astelem(right, ctx)
                 .push_opcode(opcodes::all::OP_BOOLAND),
             Terminal::AndOr(ref a, ref b, ref c) => builder
-                .push_astelem(a)
+                .push_astelem(a, ctx)
                 .push_opcode(opcodes::all::OP_NOTIF)
-                .push_astelem(c)
+                .push_astelem(c, ctx)
                 .push_opcode(opcodes::all::OP_ELSE)
-                .push_astelem(b)
+                .push_astelem(b, ctx)
                 .push_opcode(opcodes::all::OP_ENDIF),
             Terminal::OrB(ref left, ref right) => builder
-                .push_astelem(left)
-                .push_astelem(right)
+                .push_astelem(left, ctx)
+                .push_astelem(right, ctx)
                 .push_opcode(opcodes::all::OP_BOOLOR),
             Terminal::OrD(ref left, ref right) => builder
-                .push_astelem(left)
+                .push_astelem(left, ctx)
                 .push_opcode(opcodes::all::OP_IFDUP)
                 .push_opcode(opcodes::all::OP_NOTIF)
-                .push_astelem(right)
+                .push_astelem(right, ctx)
                 .push_opcode(opcodes::all::OP_ENDIF),
             Terminal::OrC(ref left, ref right) => builder
-                .push_astelem(left)
+                .push_astelem(left, ctx)
                 .push_opcode(opcodes::all::OP_NOTIF)
-                .push_astelem(right)
+                .push_astelem(right, ctx)
                 .push_opcode(opcodes::all::OP_ENDIF),
             Terminal::OrI(ref left, ref right) => builder
                 .push_opcode(opcodes::all::OP_IF)
-                .push_astelem(left)
+                .push_astelem(left, ctx)
                 .push_opcode(opcodes::all::OP_ELSE)
-                .push_astelem(right)
+                .push_astelem(right, ctx)
                 .push_opcode(opcodes::all::OP_ENDIF),
             Terminal::Thresh(k, ref subs) => {
-                builder = builder.push_astelem(&subs[0]);
+                builder = builder.push_astelem(&subs[0], ctx);
                 for sub in &subs[1..] {
-                    builder = builder.push_astelem(sub).push_opcode(opcodes::all::OP_ADD);
+                    builder = builder.push_astelem(sub, ctx).push_opcode(opcodes::all::OP_ADD);
                 }
                 builder
                     .push_int(k as i64)
                     .push_opcode(opcodes::all::OP_EQUAL)
             }
             Terminal::Multi(k, ref keys) => {
-                debug_assert!(Ctx::sig_type() == SigType::Ecdsa);
+                // debug_assert!(Ctx::sig_type() == SigType::Ecdsa);
+                // The above assertion does not hodl in MsUnchecked or Terminal
+                // This is only enforced at Miniscript level, not at terminal level.
                 builder = builder.push_int(k as i64);
                 for pk in keys {
                     builder = builder.push_key(&pk.to_public_key());
@@ -578,12 +603,11 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Terminal<Pk, Ctx> {
                     .push_opcode(opcodes::all::OP_CHECKMULTISIG)
             }
             Terminal::MultiA(k, ref keys) => {
-                debug_assert!(Ctx::sig_type() == SigType::Schnorr);
                 // keys must be atleast len 1 here, guaranteed by typing rules
-                builder = builder.push_ms_key::<_, Ctx>(&keys[0]);
+                builder = builder.push_ms_key(&keys[0], ctx);
                 builder = builder.push_opcode(opcodes::all::OP_CHECKSIG);
                 for pk in keys.iter().skip(1) {
-                    builder = builder.push_ms_key::<_, Ctx>(pk);
+                    builder = builder.push_ms_key(pk, ctx);
                     builder = builder.push_opcode(opcodes::all::OP_CHECKSIGADD);
                 }
                 builder

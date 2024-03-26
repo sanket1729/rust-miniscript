@@ -2,8 +2,7 @@
 
 //! Correctness/Soundness type properties
 
-use super::{ErrorKind, Property};
-use crate::ScriptContext;
+use super::{ErrorKind, Property, ScriptContextEnum};
 
 /// Basic type representing where the fragment can go
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
@@ -121,11 +120,11 @@ impl Property for Correctness {
         Correctness { base: Base::B, input: Input::Zero, dissatisfiable: true, unit: true }
     }
 
-    fn from_pk_k<Ctx: ScriptContext>() -> Self {
+    fn from_pk_k(ctx: ScriptContextEnum) -> Self {
         Correctness { base: Base::K, input: Input::OneNonZero, dissatisfiable: true, unit: true }
     }
 
-    fn from_pk_h<Ctx: ScriptContext>() -> Self {
+    fn from_pk_h(ctx: ScriptContextEnum) -> Self {
         Correctness {
             base: Base::K,
             input: Input::AnyNonZero,

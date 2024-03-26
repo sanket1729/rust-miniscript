@@ -17,8 +17,7 @@ use bitcoin::{absolute, Sequence};
 pub use self::correctness::{Base, Correctness, Input};
 pub use self::extra_props::ExtData;
 pub use self::malleability::{Dissat, Malleability};
-use super::ScriptContext;
-use crate::{MiniscriptKey, Terminal};
+use crate::{MiniscriptKey, SigType, Terminal};
 
 /// Detailed type of a typechecker error
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -82,14 +81,14 @@ pub enum ErrorKind {
 
 /// Error type for typechecking
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct Error<Pk: MiniscriptKey, Ctx: ScriptContext> {
+pub struct Error<Pk: MiniscriptKey> {
     /// The fragment that failed typecheck
-    pub fragment: Terminal<Pk, Ctx>,
+    pub fragment: Terminal<Pk>,
     /// The reason that typechecking failed
     pub error: ErrorKind,
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Error<Pk, Ctx> {
+impl<Pk: MiniscriptKey> fmt::Display for Error<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.error {
             ErrorKind::InvalidTime => write!(
@@ -199,8 +198,37 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Error<Pk, Ctx> {
 }
 
 #[cfg(feature = "std")]
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> error::Error for Error<Pk, Ctx> {
+impl<Pk: MiniscriptKey> error::Error for Error<Pk> {
     fn cause(&self) -> Option<&dyn error::Error> { None }
+}
+
+/// Internal only type used to convert [`MsUnchecked`] to [`Miniscript`].
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
+pub enum ScriptContextEnum {
+    /// Bare, as in Script pubkey
+    Bare,
+    /// P2SH wrapped, maps to legacy scriptContext
+    P2Sh,
+    /// P2WSH wrapped, maps to Segwitv0 scriptContext
+    Segwitv0,
+    /// taproot script, Tap context, segwitv1 and 0xc0 leaf version
+    TapScript,
+    // / The unchecked type. No context rules are checked.
+    // The above four are useful while parsing, while this is useful
+    // for 
+}
+
+impl ScriptContextEnum {
+
+    /// Obtains the sigtype for this enum
+    pub(crate) fn sig_type(self) -> SigType {
+        match self {
+            ScriptContextEnum::Bare => SigType::Ecdsa,
+            ScriptContextEnum::P2Sh => SigType::Ecdsa,
+            ScriptContextEnum::Segwitv0 => SigType::Ecdsa,
+            ScriptContextEnum::TapScript => SigType::Schnorr,
+        }
+    }
 }
 
 /// Structure representing the type of a Miniscript fragment, including all
@@ -238,10 +266,10 @@ pub trait Property: Sized {
     fn from_false() -> Self;
 
     /// Type property of the `PkK` fragment
-    fn from_pk_k<Ctx: ScriptContext>() -> Self;
+    fn from_pk_k(ctx: ScriptContextEnum) -> Self;
 
     /// Type property of the `PkH` fragment
-    fn from_pk_h<Ctx: ScriptContext>() -> Self;
+    fn from_pk_h(ctx: ScriptContextEnum) -> Self;
 
     /// Type property of a `Multi` fragment
     fn from_multi(k: usize, n: usize) -> Self;
@@ -331,7 +359,7 @@ pub trait Property: Sized {
     /// Computes the type of an `OrD` fragment
     fn or_d(left: Self, right: Self) -> Result<Self, ErrorKind>;
 
-    /// Computes the type of an `OrC` fragment
+    /// Computes the type of an `OrC` fragmentß
     fn or_c(left: Self, right: Self) -> Result<Self, ErrorKind>;
 
     /// Computes the type of an `OrI` fragment
@@ -348,14 +376,14 @@ pub trait Property: Sized {
     /// Compute the type of a fragment, given a function to look up
     /// the types of its children, if available and relevant for the
     /// given fragment
-    fn type_check_common<'a, Pk, Ctx, C>(
-        fragment: &'a Terminal<Pk, Ctx>,
+    fn type_check_common<Pk, C>(
+        fragment: &Terminal<Pk>,
         mut get_child: C,
-    ) -> Result<Self, Error<Pk, Ctx>>
+        ctx: ScriptContextEnum,
+    ) -> Result<Self, Error<Pk>>
     where
-        C: FnMut(&'a Terminal<Pk, Ctx>, usize) -> Result<Self, Error<Pk, Ctx>>,
+        C: FnMut(&Terminal<Pk>, usize) -> Result<Self, Error<Pk>>,
         Pk: MiniscriptKey,
-        Ctx: ScriptContext,
     {
         let wrap_err = |result: Result<Self, ErrorKind>| {
             result.map_err(|kind| Error { fragment: fragment.clone(), error: kind })
@@ -364,8 +392,8 @@ pub trait Property: Sized {
         let ret = match *fragment {
             Terminal::True => Ok(Self::from_true()),
             Terminal::False => Ok(Self::from_false()),
-            Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
-            Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h::<Ctx>()),
+            Terminal::PkK(..) => Ok(Self::from_pk_k(ctx)),
+            Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h(ctx)),
             Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {
@@ -492,26 +520,25 @@ pub trait Property: Sized {
 
     /// Compute the type of a fragment, given a function to look up
     /// the types of its children.
-    fn type_check_with_child<Pk, Ctx, C>(
-        fragment: &Terminal<Pk, Ctx>,
+    fn type_check_with_child<Pk, C>(
+        fragment: &Terminal<Pk>,
         mut child: C,
-    ) -> Result<Self, Error<Pk, Ctx>>
+        ctx: ScriptContextEnum,
+    ) -> Result<Self, Error<Pk>>
     where
         C: FnMut(usize) -> Self,
         Pk: MiniscriptKey,
-        Ctx: ScriptContext,
     {
-        let get_child = |_sub, n| Ok(child(n));
-        Self::type_check_common(fragment, get_child)
+        let get_child = |_sub: &Terminal<Pk>, n| Ok(child(n));
+        Self::type_check_common::<Pk, _>(fragment, get_child, ctx)
     }
 
     /// Compute the type of a fragment.
-    fn type_check<Pk, Ctx>(fragment: &Terminal<Pk, Ctx>) -> Result<Self, Error<Pk, Ctx>>
+    fn type_check<Pk>(fragment: &Terminal<Pk>, ctx: ScriptContextEnum) -> Result<Self, Error<Pk>>
     where
         Pk: MiniscriptKey,
-        Ctx: ScriptContext,
     {
-        Self::type_check_common(fragment, |sub, _n| Self::type_check(sub))
+        Self::type_check_common::<Pk, _>(fragment, |sub, _n| Self::type_check::<Pk>(sub, ctx), ctx)
     }
 }
 
@@ -527,12 +554,12 @@ impl Property for Type {
 
     fn from_false() -> Self { Type { corr: Property::from_false(), mall: Property::from_false() } }
 
-    fn from_pk_k<Ctx: ScriptContext>() -> Self {
-        Type { corr: Property::from_pk_k::<Ctx>(), mall: Property::from_pk_k::<Ctx>() }
+    fn from_pk_k(ctx: ScriptContextEnum) -> Self {
+        Type { corr: Property::from_pk_k(ctx), mall: Property::from_pk_k(ctx) }
     }
 
-    fn from_pk_h<Ctx: ScriptContext>() -> Self {
-        Type { corr: Property::from_pk_h::<Ctx>(), mall: Property::from_pk_h::<Ctx>() }
+    fn from_pk_h(ctx: ScriptContextEnum) -> Self {
+        Type { corr: Property::from_pk_h(ctx), mall: Property::from_pk_h(ctx) }
     }
 
     fn from_multi(k: usize, n: usize) -> Self {
@@ -694,24 +721,23 @@ impl Property for Type {
         })
     }
 
-    fn type_check_with_child<Pk, Ctx, C>(
-        _fragment: &Terminal<Pk, Ctx>,
-        mut _child: C,
-    ) -> Result<Self, Error<Pk, Ctx>>
+    fn type_check_with_child<Pk, C>(
+        _fragment: &Terminal<Pk>,
+        _child: C,
+        ctx: ScriptContextEnum,
+    ) -> Result<Self, Error<Pk>>
     where
         C: FnMut(usize) -> Self,
         Pk: MiniscriptKey,
-        Ctx: ScriptContext,
     {
         unreachable!()
     }
 
     /// Compute the type of a fragment assuming all the children of
     /// Miniscript have been computed already.
-    fn type_check<Pk, Ctx>(fragment: &Terminal<Pk, Ctx>) -> Result<Self, Error<Pk, Ctx>>
+    fn type_check<Pk>(fragment: &Terminal<Pk>, ctx: ScriptContextEnum) -> Result<Self, Error<Pk>>
     where
         Pk: MiniscriptKey,
-        Ctx: ScriptContext,
     {
         let wrap_err = |result: Result<Self, ErrorKind>| {
             result.map_err(|kind| Error { fragment: fragment.clone(), error: kind })
@@ -720,8 +746,8 @@ impl Property for Type {
         let ret = match *fragment {
             Terminal::True => Ok(Self::from_true()),
             Terminal::False => Ok(Self::from_false()),
-            Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
-            Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h::<Ctx>()),
+            Terminal::PkK(..) => Ok(Self::from_pk_k(ctx)),
+            Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h(ctx)),
             Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {

@@ -8,7 +8,7 @@ use core::iter::once;
 
 use bitcoin::{absolute, Sequence};
 
-use super::{Error, ErrorKind, Property, ScriptContext};
+use super::{Error, ErrorKind, Property, ScriptContextEnum};
 use crate::miniscript::context::SigType;
 use crate::prelude::*;
 use crate::{script_num_size, MiniscriptKey, Terminal};
@@ -175,9 +175,9 @@ impl Property for ExtData {
         }
     }
 
-    fn from_pk_k<Ctx: ScriptContext>() -> Self {
+    fn from_pk_k(ctx: ScriptContextEnum) -> Self {
         ExtData {
-            pk_cost: match Ctx::sig_type() {
+            pk_cost: match ctx.sig_type() {
                 SigType::Ecdsa => 34,
                 SigType::Schnorr => 33,
             },
@@ -185,7 +185,7 @@ impl Property for ExtData {
             ops: OpLimits::new(0, Some(0), Some(0)),
             stack_elem_count_sat: Some(1),
             stack_elem_count_dissat: Some(1),
-            max_sat_size: match Ctx::sig_type() {
+            max_sat_size: match ctx.sig_type() {
                 SigType::Ecdsa => Some((73, 73)),
                 SigType::Schnorr => Some((66, 66)),
             },
@@ -196,18 +196,18 @@ impl Property for ExtData {
         }
     }
 
-    fn from_pk_h<Ctx: ScriptContext>() -> Self {
+    fn from_pk_h(ctx: ScriptContextEnum) -> Self {
         ExtData {
             pk_cost: 24,
             has_free_verify: false,
             ops: OpLimits::new(3, Some(0), Some(0)),
             stack_elem_count_sat: Some(2),
             stack_elem_count_dissat: Some(2),
-            max_sat_size: match Ctx::sig_type() {
+            max_sat_size: match ctx.sig_type() {
                 SigType::Ecdsa => Some((34 + 73, 34 + 73)),
                 SigType::Schnorr => Some((66 + 33, 33 + 66)),
             },
-            max_dissat_size: match Ctx::sig_type() {
+            max_dissat_size: match ctx.sig_type() {
                 SigType::Ecdsa => Some((35, 35)),
                 SigType::Schnorr => Some((34, 34)),
             },
@@ -857,23 +857,22 @@ impl Property for ExtData {
         })
     }
 
-    fn type_check_with_child<Pk, Ctx, C>(
-        _fragment: &Terminal<Pk, Ctx>,
+    fn type_check_with_child<Pk, C>(
+        _fragment: &Terminal<Pk>,
         mut _child: C,
-    ) -> Result<Self, Error<Pk, Ctx>>
+        ctx: ScriptContextEnum,
+    ) -> Result<Self, Error<Pk>>
     where
         C: FnMut(usize) -> Self,
         Pk: MiniscriptKey,
-        Ctx: ScriptContext,
     {
         unreachable!()
     }
 
     /// Compute the type of a fragment assuming all the children of
     /// Miniscript have been computed already.
-    fn type_check<Pk, Ctx>(fragment: &Terminal<Pk, Ctx>) -> Result<Self, Error<Pk, Ctx>>
+    fn type_check<Pk>(fragment: &Terminal<Pk>, ctx: ScriptContextEnum) -> Result<Self, Error<Pk>>
     where
-        Ctx: ScriptContext,
         Pk: MiniscriptKey,
     {
         let wrap_err = |result: Result<Self, ErrorKind>| {
@@ -883,8 +882,8 @@ impl Property for ExtData {
         let ret = match *fragment {
             Terminal::True => Ok(Self::from_true()),
             Terminal::False => Ok(Self::from_false()),
-            Terminal::PkK(..) => Ok(Self::from_pk_k::<Ctx>()),
-            Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h::<Ctx>()),
+            Terminal::PkK(..) => Ok(Self::from_pk_k(ctx)),
+            Terminal::PkH(..) | Terminal::RawPkH(..) => Ok(Self::from_pk_h(ctx)),
             Terminal::Multi(k, ref pks) | Terminal::MultiA(k, ref pks) => {
                 if k == 0 {
                     return Err(Error {

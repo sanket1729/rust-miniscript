@@ -14,10 +14,11 @@ pub use tree::{
     VerbosePreOrderIter,
 };
 
+use crate::miniscript::MsUnChecked;
 use crate::sync::Arc;
-use crate::{Miniscript, MiniscriptKey, ScriptContext, Terminal};
+use crate::{MiniscriptKey, Terminal};
 
-impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext> TreeLike for &'a Miniscript<Pk, Ctx> {
+impl<'a, Pk: MiniscriptKey> TreeLike for &'a MsUnChecked<Pk> {
     fn as_node(&self) -> Tree<Self> {
         use Terminal::*;
         match self.node {
@@ -42,7 +43,7 @@ impl<'a, Pk: MiniscriptKey, Ctx: ScriptContext> TreeLike for &'a Miniscript<Pk, 
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> TreeLike for Arc<Miniscript<Pk, Ctx>> {
+impl<Pk: MiniscriptKey> TreeLike for Arc<MsUnChecked<Pk>> {
     fn as_node(&self) -> Tree<Self> {
         use Terminal::*;
         match self.node {

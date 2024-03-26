@@ -2,8 +2,7 @@
 
 //! Malleability-related Type properties
 
-use super::{ErrorKind, Property};
-use crate::ScriptContext;
+use super::{ErrorKind, Property, ScriptContextEnum};
 
 /// Whether the fragment has a dissatisfaction, and if so, whether
 /// it is unique. Affects both correctness and malleability-freeness,
@@ -75,11 +74,11 @@ impl Property for Malleability {
         Malleability { dissat: Dissat::Unique, safe: true, non_malleable: true }
     }
 
-    fn from_pk_k<Ctx: ScriptContext>() -> Self {
+    fn from_pk_k(ctx: ScriptContextEnum) -> Self {
         Malleability { dissat: Dissat::Unique, safe: true, non_malleable: true }
     }
 
-    fn from_pk_h<Ctx: ScriptContext>() -> Self {
+    fn from_pk_h(ctx: ScriptContextEnum) -> Self {
         Malleability { dissat: Dissat::Unique, safe: true, non_malleable: true }
     }
 

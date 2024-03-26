@@ -6,7 +6,6 @@
 //!
 
 use core::fmt;
-use core::marker::PhantomData;
 #[cfg(feature = "std")]
 use std::error;
 
@@ -14,18 +13,25 @@ use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::{Sequence, Weight};
 use sync::Arc;
 
+use super::types::ScriptContextEnum;
+use super::MsUnChecked;
 use crate::miniscript::lex::{Token as Tk, TokenIter};
 use crate::miniscript::limits::MAX_PUBKEYS_PER_MULTISIG;
 use crate::miniscript::types::extra_props::ExtData;
 use crate::miniscript::types::{Property, Type};
-use crate::miniscript::ScriptContext;
 use crate::prelude::*;
 #[cfg(doc)]
 use crate::Descriptor;
-use crate::{hash256, AbsLockTime, Error, Miniscript, MiniscriptKey, ToPublicKey};
+use crate::{hash256, AbsLockTime, Error, MiniscriptKey, ToPublicKey};
 
 /// Trait for parsing keys from byte slices
-pub trait ParseableKey: Sized + ToPublicKey + private::Sealed {
+pub trait ParseableKey: Sized + ToPublicKey + private::Sealed 
+where 
+Self: MiniscriptKey<Sha256 = sha256::Hash>,
+Self: MiniscriptKey<Hash256 = hash256::Hash>,
+Self: MiniscriptKey<Ripemd160 = ripemd160::Hash>,
+Self: MiniscriptKey<Hash160 = hash160::Hash>,
+{
     /// Parse a key from slice
     fn from_slice(sl: &[u8]) -> Result<Self, KeyParseError>;
 }
@@ -117,7 +123,7 @@ enum NonTerm {
 /// The average user should always use the [`Descriptor`] APIs. Advanced users who want deal
 /// with Miniscript ASTs should use the [`Miniscript`] APIs.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
+pub enum Terminal<Pk: MiniscriptKey> {
     /// `1`
     True,
     /// `0`
@@ -149,38 +155,38 @@ pub enum Terminal<Pk: MiniscriptKey, Ctx: ScriptContext> {
     Hash160(Pk::Hash160),
     // Wrappers
     /// `TOALTSTACK [E] FROMALTSTACK`
-    Alt(Arc<Miniscript<Pk, Ctx>>),
+    Alt(Arc<MsUnChecked<Pk>>),
     /// `SWAP [E1]`
-    Swap(Arc<Miniscript<Pk, Ctx>>),
+    Swap(Arc<MsUnChecked<Pk>>),
     /// `[Kt]/[Ke] CHECKSIG`
-    Check(Arc<Miniscript<Pk, Ctx>>),
+    Check(Arc<MsUnChecked<Pk>>),
     /// `DUP IF [V] ENDIF`
-    DupIf(Arc<Miniscript<Pk, Ctx>>),
+    DupIf(Arc<MsUnChecked<Pk>>),
     /// `[T] VERIFY`
-    Verify(Arc<Miniscript<Pk, Ctx>>),
+    Verify(Arc<MsUnChecked<Pk>>),
     /// `SIZE 0NOTEQUAL IF [Fn] ENDIF`
-    NonZero(Arc<Miniscript<Pk, Ctx>>),
+    NonZero(Arc<MsUnChecked<Pk>>),
     /// `[X] 0NOTEQUAL`
-    ZeroNotEqual(Arc<Miniscript<Pk, Ctx>>),
+    ZeroNotEqual(Arc<MsUnChecked<Pk>>),
     // Conjunctions
     /// `[V] [T]/[V]/[F]/[Kt]`
-    AndV(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    AndV(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>),
     /// `[E] [W] BOOLAND`
-    AndB(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    AndB(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>),
     /// `[various] NOTIF [various] ELSE [various] ENDIF`
-    AndOr(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    AndOr(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>),
     // Disjunctions
     /// `[E] [W] BOOLOR`
-    OrB(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    OrB(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>),
     /// `[E] IFDUP NOTIF [T]/[E] ENDIF`
-    OrD(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    OrD(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>),
     /// `[E] NOTIF [V] ENDIF`
-    OrC(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    OrC(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>),
     /// `IF [various] ELSE [various] ENDIF`
-    OrI(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>),
+    OrI(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>),
     // Thresholds
     /// `[E] ([W] ADD)* k EQUAL`
-    Thresh(usize, Vec<Arc<Miniscript<Pk, Ctx>>>),
+    Thresh(usize, Vec<Arc<MsUnChecked<Pk>>>),
     /// `k (<key>)* n CHECKMULTISIG`
     Multi(usize, Vec<Pk>),
     /// `<key> CHECKSIG (<key> CHECKSIGADD)*(n-1) k NUMEQUAL`
@@ -204,52 +210,52 @@ macro_rules! match_token {
 
 ///Vec representing terminals stack while decoding.
 #[derive(Debug)]
-struct TerminalStack<Pk: MiniscriptKey, Ctx: ScriptContext>(Vec<Miniscript<Pk, Ctx>>);
+struct TerminalStack<Pk: MiniscriptKey>(Vec<MsUnChecked<Pk>>);
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
+impl<Pk: MiniscriptKey> TerminalStack<Pk> {
     ///Wrapper around self.0.pop()
-    fn pop(&mut self) -> Option<Miniscript<Pk, Ctx>> { self.0.pop() }
+    fn pop(&mut self) -> Option<MsUnChecked<Pk>> { self.0.pop() }
 
     ///reduce, type check and push a 0-arg node
-    fn reduce0(&mut self, ms: Terminal<Pk, Ctx>) -> Result<(), Error> {
-        let ty = Type::type_check(&ms)?;
-        let ext = ExtData::type_check(&ms)?;
-        let ms = Miniscript { node: ms, ty, ext, phantom: PhantomData };
-        Ctx::check_global_validity(&ms)?;
+    fn reduce0(&mut self, ms: Terminal<Pk>, ctx: ScriptContextEnum) -> Result<(), Error> {
+        let ty = Type::type_check(&ms, ctx)?;
+        let ext = ExtData::type_check(&ms, ctx)?;
+        let ms = MsUnChecked { node: ms, ty, ext };
+        // Ctx::check_global_validity(&ms)?;
         self.0.push(ms);
         Ok(())
     }
 
     ///reduce, type check and push a 1-arg node
-    fn reduce1<F>(&mut self, wrap: F) -> Result<(), Error>
+    fn reduce1<F>(&mut self, wrap: F, ctx: ScriptContextEnum) -> Result<(), Error>
     where
-        F: FnOnce(Arc<Miniscript<Pk, Ctx>>) -> Terminal<Pk, Ctx>,
+        F: FnOnce(Arc<MsUnChecked<Pk>>) -> Terminal<Pk>,
     {
         let top = self.pop().unwrap();
         let wrapped_ms = wrap(Arc::new(top));
 
-        let ty = Type::type_check(&wrapped_ms)?;
-        let ext = ExtData::type_check(&wrapped_ms)?;
-        let ms = Miniscript { node: wrapped_ms, ty, ext, phantom: PhantomData };
-        Ctx::check_global_validity(&ms)?;
+        let ty = Type::type_check(&wrapped_ms, ctx)?;
+        let ext = ExtData::type_check(&wrapped_ms, ctx)?;
+        let ms = MsUnChecked { node: wrapped_ms, ty, ext };
+        // Ctx::check_global_validity(&ms)?;
         self.0.push(ms);
         Ok(())
     }
 
     ///reduce, type check and push a 2-arg node
-    fn reduce2<F>(&mut self, wrap: F) -> Result<(), Error>
+    fn reduce2<F>(&mut self, wrap: F, ctx: ScriptContextEnum) -> Result<(), Error>
     where
-        F: FnOnce(Arc<Miniscript<Pk, Ctx>>, Arc<Miniscript<Pk, Ctx>>) -> Terminal<Pk, Ctx>,
+        F: FnOnce(Arc<MsUnChecked<Pk>>, Arc<MsUnChecked<Pk>>) -> Terminal<Pk>,
     {
         let left = self.pop().unwrap();
         let right = self.pop().unwrap();
 
         let wrapped_ms = wrap(Arc::new(left), Arc::new(right));
 
-        let ty = Type::type_check(&wrapped_ms)?;
-        let ext = ExtData::type_check(&wrapped_ms)?;
-        let ms = Miniscript { node: wrapped_ms, ty, ext, phantom: PhantomData };
-        Ctx::check_global_validity(&ms)?;
+        let ty = Type::type_check(&wrapped_ms, ctx)?;
+        let ext = ExtData::type_check(&wrapped_ms, ctx)?;
+        let ms = MsUnChecked { node: wrapped_ms, ty, ext };
+        // Ctx::check_global_validity(&ms)?;
         self.0.push(ms);
         Ok(())
     }
@@ -257,9 +263,10 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> TerminalStack<Pk, Ctx> {
 
 /// Parse a script fragment into an `Miniscript`
 #[allow(unreachable_patterns)]
-pub fn parse<Ctx: ScriptContext>(
+pub fn parse<Pk: ParseableKey>(
     tokens: &mut TokenIter,
-) -> Result<Miniscript<Ctx::Key, Ctx>, Error> {
+    ctx: ScriptContextEnum,
+) -> Result<MsUnChecked<Pk>, Error> {
     let mut non_term = Vec::with_capacity(tokens.len());
     let mut term = TerminalStack(Vec::with_capacity(tokens.len()));
 
@@ -273,14 +280,14 @@ pub fn parse<Ctx: ScriptContext>(
                     tokens,
                     // pubkey
                     Tk::Bytes33(pk) => {
-                        let ret = Ctx::Key::from_slice(pk)
-                            .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
-                        term.reduce0(Terminal::PkK(ret))?
+                        let ret = Pk::from_slice(pk)
+                            .map_err(|e| Error::PubKeyCtxError(e, "FIXME"))?;
+                        term.reduce0(Terminal::PkK(ret), ctx)?
                     },
                     Tk::Bytes65(pk) => {
-                        let ret = Ctx::Key::from_slice(pk)
-                            .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
-                        term.reduce0(Terminal::PkK(ret))?
+                        let ret = Pk::from_slice(pk)
+                            .map_err(|e| Error::PubKeyCtxError(e, "FIXME"))?;
+                        term.reduce0(Terminal::PkK(ret), ctx)?
                     },
                     // Note this does not collide with hash32 because they always followed by equal
                     // and would be parsed in different branch. If we get a naked Bytes32, it must be
@@ -295,8 +302,8 @@ pub fn parse<Ctx: ScriptContext>(
                     // after bytes32 means bytes32 is in a hashlock
                     // Finally for the first case, K being parsed as a solo expression is a Pk type
                     Tk::Bytes32(pk) => {
-                        let ret = Ctx::Key::from_slice(pk).map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?;
-                        term.reduce0(Terminal::PkK(ret))?
+                        let ret = Pk::from_slice(pk).map_err(|e| Error::PubKeyCtxError(e, "FIXME"))?;
+                        term.reduce0(Terminal::PkK(ret), ctx)?
                     },
                     // checksig
                     Tk::CheckSig => {
@@ -315,20 +322,20 @@ pub fn parse<Ctx: ScriptContext>(
                                     Tk::Dup => {
                                         term.reduce0(Terminal::RawPkH(
                                             hash160::Hash::from_slice(hash).expect("valid size")
-                                        ))?
+                                        ), ctx)?
                                     },
                                     Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                         non_term.push(NonTerm::Verify);
                                         term.reduce0(Terminal::Hash160(
                                             hash160::Hash::from_slice(hash).expect("valid size")
-                                        ))?
+                                        ), ctx)?
                                     },
                                 ),
                                 Tk::Ripemd160, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Ripemd160(
                                         ripemd160::Hash::from_slice(hash).expect("valid size")
-                                    ))?
+                                    ), ctx)?
                                 },
                             ),
                             // Tk::Hash20(hash),
@@ -338,13 +345,13 @@ pub fn parse<Ctx: ScriptContext>(
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Sha256(
                                         sha256::Hash::from_slice(hash).expect("valid size")
-                                    ))?
+                                    ), ctx)?
                                 },
                                 Tk::Hash256, Tk::Verify, Tk::Equal, Tk::Num(32), Tk::Size => {
                                     non_term.push(NonTerm::Verify);
                                     term.reduce0(Terminal::Hash256(
                                         hash256::Hash::from_slice(hash).expect("valid size")
-                                    ))?
+                                    ), ctx)?
                                 },
                             ),
                             Tk::Num(k) => {
@@ -367,9 +374,9 @@ pub fn parse<Ctx: ScriptContext>(
                     },
                     // timelocks
                     Tk::CheckSequenceVerify, Tk::Num(n)
-                        => term.reduce0(Terminal::Older(Sequence::from_consensus(n)))?,
+                        => term.reduce0(Terminal::Older(Sequence::from_consensus(n)), ctx)?,
                     Tk::CheckLockTimeVerify, Tk::Num(n)
-                        => term.reduce0(Terminal::After(AbsLockTime::from_consensus(n)))?,
+                        => term.reduce0(Terminal::After(AbsLockTime::from_consensus(n)), ctx)?,
                     // hashlocks
                     Tk::Equal => match_token!(
                         tokens,
@@ -381,14 +388,14 @@ pub fn parse<Ctx: ScriptContext>(
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Sha256(
                                 sha256::Hash::from_slice(hash).expect("valid size")
-                            ))?,
+                            ), ctx)?,
                             Tk::Hash256,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Hash256(
                                 hash256::Hash::from_slice(hash).expect("valid size")
-                            ))?,
+                            ), ctx)?,
                         ),
                         Tk::Hash20(hash) => match_token!(
                             tokens,
@@ -398,14 +405,14 @@ pub fn parse<Ctx: ScriptContext>(
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Ripemd160(
                                 ripemd160::Hash::from_slice(hash).expect("valid size")
-                            ))?,
+                            ), ctx)?,
                             Tk::Hash160,
                             Tk::Verify,
                             Tk::Equal,
                             Tk::Num(32),
                             Tk::Size => term.reduce0(Terminal::Hash160(
                                 hash160::Hash::from_slice(hash).expect("valid size")
-                            ))?,
+                            ), ctx)?,
                         ),
                         // thresholds
                         Tk::Num(k) => {
@@ -419,8 +426,8 @@ pub fn parse<Ctx: ScriptContext>(
                         },
                     ),
                     // most other fragments
-                    Tk::Num(0) => term.reduce0(Terminal::False)?,
-                    Tk::Num(1) => term.reduce0(Terminal::True)?,
+                    Tk::Num(0) => term.reduce0(Terminal::False, ctx)?,
+                    Tk::Num(1) => term.reduce0(Terminal::True, ctx)?,
                     Tk::EndIf => {
                         non_term.push(NonTerm::EndIf);
                         non_term.push(NonTerm::MaybeAndV);
@@ -446,10 +453,10 @@ pub fn parse<Ctx: ScriptContext>(
                         for _ in 0..n {
                             match_token!(
                                 tokens,
-                                Tk::Bytes33(pk) => keys.push(<Ctx::Key>::from_slice(pk)
-                                    .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?),
-                                Tk::Bytes65(pk) => keys.push(<Ctx::Key>::from_slice(pk)
-                                    .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?),
+                                Tk::Bytes33(pk) => keys.push(Pk::from_slice(pk)
+                                    .map_err(|e| Error::PubKeyCtxError(e, "FIXME"))?),
+                                Tk::Bytes65(pk) => keys.push(Pk::from_slice(pk)
+                                    .map_err(|e| Error::PubKeyCtxError(e, "FIXME"))?),
                             );
                         }
                         let k = match_token!(
@@ -457,7 +464,7 @@ pub fn parse<Ctx: ScriptContext>(
                             Tk::Num(k) => k,
                         );
                         keys.reverse();
-                        term.reduce0(Terminal::Multi(k as usize, keys))?;
+                        term.reduce0(Terminal::Multi(k as usize, keys), ctx)?;
                     },
                     // MultiA
                     Tk::NumEqual, Tk::Num(k) => {
@@ -470,18 +477,18 @@ pub fn parse<Ctx: ScriptContext>(
                         while tokens.peek() == Some(&Tk::CheckSigAdd) {
                             match_token!(
                                 tokens,
-                                Tk::CheckSigAdd, Tk::Bytes32(pk) => keys.push(<Ctx::Key>::from_slice(pk)
-                                    .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?),
+                                Tk::CheckSigAdd, Tk::Bytes32(pk) => keys.push(Pk::from_slice(pk)
+                                    .map_err(|e| Error::PubKeyCtxError(e, "FIXME"))?),
                             );
                         }
                         // Last key must be with a CheckSig
                         match_token!(
                             tokens,
-                            Tk::CheckSig, Tk::Bytes32(pk) => keys.push(<Ctx::Key>::from_slice(pk)
-                                .map_err(|e| Error::PubKeyCtxError(e, Ctx::name_str()))?),
+                            Tk::CheckSig, Tk::Bytes32(pk) => keys.push(Pk::from_slice(pk)
+                                .map_err(|e| Error::PubKeyCtxError(e, "FIXME"))?),
                         );
                         keys.reverse();
-                        term.reduce0(Terminal::MultiA(k as usize, keys))?;
+                        term.reduce0(Terminal::MultiA(k as usize, keys), ctx)?;
                     },
                 );
             }
@@ -498,7 +505,7 @@ pub fn parse<Ctx: ScriptContext>(
                     tokens,
                     Tk::Swap => {},
                 );
-                term.reduce1(Terminal::Swap)?;
+                term.reduce1(Terminal::Swap, ctx)?;
                 // Swap must be always be terminating a NonTerm as it cannot be in and_v
             }
             Some(NonTerm::Alt) => {
@@ -506,36 +513,35 @@ pub fn parse<Ctx: ScriptContext>(
                     tokens,
                     Tk::ToAltStack => {},
                 );
-                term.reduce1(Terminal::Alt)?;
+                term.reduce1(Terminal::Alt, ctx)?;
             }
-            Some(NonTerm::Check) => term.reduce1(Terminal::Check)?,
-            Some(NonTerm::DupIf) => term.reduce1(Terminal::DupIf)?,
-            Some(NonTerm::Verify) => term.reduce1(Terminal::Verify)?,
-            Some(NonTerm::NonZero) => term.reduce1(Terminal::NonZero)?,
-            Some(NonTerm::ZeroNotEqual) => term.reduce1(Terminal::ZeroNotEqual)?,
+            Some(NonTerm::Check) => term.reduce1(Terminal::Check, ctx)?,
+            Some(NonTerm::DupIf) => term.reduce1(Terminal::DupIf, ctx)?,
+            Some(NonTerm::Verify) => term.reduce1(Terminal::Verify, ctx)?,
+            Some(NonTerm::NonZero) => term.reduce1(Terminal::NonZero, ctx)?,
+            Some(NonTerm::ZeroNotEqual) => term.reduce1(Terminal::ZeroNotEqual, ctx)?,
             Some(NonTerm::AndV) => {
                 if is_and_v(tokens) {
                     non_term.push(NonTerm::AndV);
                     non_term.push(NonTerm::MaybeAndV);
                 } else {
-                    term.reduce2(Terminal::AndV)?
+                    term.reduce2(Terminal::AndV, ctx)?
                 }
             }
-            Some(NonTerm::AndB) => term.reduce2(Terminal::AndB)?,
-            Some(NonTerm::OrB) => term.reduce2(Terminal::OrB)?,
-            Some(NonTerm::OrC) => term.reduce2(Terminal::OrC)?,
-            Some(NonTerm::OrD) => term.reduce2(Terminal::OrD)?,
+            Some(NonTerm::AndB) => term.reduce2(Terminal::AndB, ctx)?,
+            Some(NonTerm::OrB) => term.reduce2(Terminal::OrB, ctx)?,
+            Some(NonTerm::OrC) => term.reduce2(Terminal::OrC, ctx)?,
+            Some(NonTerm::OrD) => term.reduce2(Terminal::OrD, ctx)?,
             Some(NonTerm::Tern) => {
                 let a = term.pop().unwrap();
                 let b = term.pop().unwrap();
                 let c = term.pop().unwrap();
                 let wrapped_ms = Terminal::AndOr(Arc::new(a), Arc::new(c), Arc::new(b));
 
-                let ty = Type::type_check(&wrapped_ms)?;
-                let ext = ExtData::type_check(&wrapped_ms)?;
+                let ty = Type::type_check(&wrapped_ms, ctx)?;
+                let ext = ExtData::type_check(&wrapped_ms, ctx)?;
 
-                term.0
-                    .push(Miniscript { node: wrapped_ms, ty, ext, phantom: PhantomData });
+                term.0.push(MsUnChecked { node: wrapped_ms, ty, ext });
             }
             Some(NonTerm::ThreshW { n, k }) => {
                 match_token!(
@@ -556,7 +562,7 @@ pub fn parse<Ctx: ScriptContext>(
                 for _ in 0..n {
                     subs.push(Arc::new(term.pop().unwrap()));
                 }
-                term.reduce0(Terminal::Thresh(k, subs))?;
+                term.reduce0(Terminal::Thresh(k, subs), ctx)?;
             }
             Some(NonTerm::EndIf) => {
                 match_token!(
@@ -592,7 +598,7 @@ pub fn parse<Ctx: ScriptContext>(
                 match_token!(
                     tokens,
                     Tk::If => {
-                        term.reduce2(Terminal::OrI)?;
+                        term.reduce2(Terminal::OrI, ctx)?;
                     },
                     Tk::NotIf => {
                         non_term.push(NonTerm::Tern);

@@ -20,7 +20,7 @@ use bitcoin::{
 use bitcoind::bitcoincore_rpc::{json, Client, RpcApi};
 use miniscript::bitcoin::{self, ecdsa, taproot, ScriptBuf};
 use miniscript::psbt::{PsbtExt, PsbtInputExt};
-use miniscript::{Descriptor, Miniscript, ScriptContext, ToPublicKey};
+use miniscript::{Descriptor, Miniscript, ScriptContext, Segwitv0, ToPublicKey};
 mod setup;
 
 use rand::RngCore;
@@ -218,7 +218,7 @@ pub fn test_desc_satisfy(
                 Descriptor::Sh(sh) => match sh.as_inner() {
                     miniscript::descriptor::ShInner::Wsh(wsh) => match wsh.as_inner() {
                         miniscript::descriptor::WshInner::SortedMulti(ref smv) => {
-                            let ms = Miniscript::from_ast(smv.sorted_node()).unwrap();
+                            let ms: Miniscript<bitcoin::PublicKey, Segwitv0> = Miniscript::from_ast(smv.sorted_node()).unwrap();
                             find_sks_ms(&ms, testdata)
                         }
                         miniscript::descriptor::WshInner::Ms(ref ms) => find_sks_ms(&ms, testdata),
@@ -227,14 +227,14 @@ pub fn test_desc_satisfy(
                         find_sk_single_key(*pk.as_inner(), testdata)
                     }
                     miniscript::descriptor::ShInner::SortedMulti(smv) => {
-                        let ms = Miniscript::from_ast(smv.sorted_node()).unwrap();
+                        let ms = Miniscript::<_, Segwitv0>::from_ast(smv.sorted_node()).unwrap();
                         find_sks_ms(&ms, testdata)
                     }
                     miniscript::descriptor::ShInner::Ms(ms) => find_sks_ms(&ms, testdata),
                 },
                 Descriptor::Wsh(wsh) => match wsh.as_inner() {
                     miniscript::descriptor::WshInner::SortedMulti(ref smv) => {
-                        let ms = Miniscript::from_ast(smv.sorted_node()).unwrap();
+                        let ms = Miniscript::<_, Segwitv0>::from_ast(smv.sorted_node()).unwrap();
                         find_sks_ms(&ms, testdata)
                     }
                     miniscript::descriptor::WshInner::Ms(ref ms) => find_sks_ms(&ms, testdata),

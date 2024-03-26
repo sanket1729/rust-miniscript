@@ -9,6 +9,8 @@ use bitcoin::hashes::{hash160, ripemd160, sha256};
 use bitcoin::Weight;
 
 use super::decode::ParseableKey;
+use super::types::ScriptContextEnum;
+use super::MsUnChecked;
 use crate::miniscript::limits::{
     MAX_OPS_PER_SCRIPT, MAX_PUBKEYS_PER_MULTISIG, MAX_SCRIPTSIG_SIZE, MAX_SCRIPT_ELEMENT_SIZE,
     MAX_SCRIPT_SIZE, MAX_STACK_SIZE, MAX_STANDARD_P2WSH_SCRIPT_SIZE,
@@ -17,7 +19,7 @@ use crate::miniscript::limits::{
 use crate::miniscript::types;
 use crate::prelude::*;
 use crate::util::witness_to_scriptsig;
-use crate::{hash256, Error, ForEachKey, Miniscript, MiniscriptKey, Terminal};
+use crate::{hash256, Error, ForEachKey, MiniscriptKey, Terminal};
 
 /// Error for Script Context
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -182,7 +184,7 @@ where
     /// valid or not. Since the compilation proceeds in a leaf to root fashion,
     /// a recursive check is unnecessary.
     fn check_terminal_non_malleable<Pk: MiniscriptKey>(
-        _frag: &Terminal<Pk, Self>,
+        _frag: &Terminal<Pk>,
     ) -> Result<(), ScriptContextError>;
 
     /// Check whether the given satisfaction is valid under the ScriptContext
@@ -195,6 +197,11 @@ where
         Ok(())
     }
 
+    /// Obtain the context enum
+    fn context_enum() -> ScriptContextEnum {
+        ScriptContextEnum::Bare // FIXME, THIS IS AN ERROR
+    }
+
     /// Each context has slightly different rules on what Pks are allowed in descriptors
     /// Legacy/Bare does not allow x_only keys
     /// Segwit does not allow uncompressed keys and x_only keys
@@ -202,7 +209,7 @@ where
     fn check_pk<Pk: MiniscriptKey>(pk: &Pk) -> Result<(), ScriptContextError>;
 
     /// Depending on script context, the size of a satifaction witness may slightly differ.
-    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Option<usize>;
+    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Option<usize>;
     /// Depending on script Context, some of the Terminals might not
     /// be valid under the current consensus rules.
     /// Or some of the script resource limits may have been exceeded.
@@ -214,7 +221,7 @@ where
     /// Post Tapscript upgrade, this would have to consider other nodes.
     /// This does *NOT* recursively check the miniscript fragments.
     fn check_global_consensus_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
@@ -228,7 +235,7 @@ where
     /// Post Tapscript upgrade, this would have to consider other nodes.
     /// This does *NOT* recursively check the miniscript fragments.
     fn check_global_policy_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
@@ -238,7 +245,7 @@ where
     /// and our current satisfier and lifting analysis would not work correctly.
     /// For example, satisfaction path(Legacy/Segwitv0) may require more than 201 opcodes.
     fn check_local_consensus_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
@@ -249,7 +256,7 @@ where
     /// For example, satisfaction path in Legacy context scriptSig more
     /// than 1650 bytes
     fn check_local_policy_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
@@ -257,7 +264,7 @@ where
     /// Check the consensus + policy(if not disabled) rules that are not based
     /// satisfaction
     fn check_global_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Self::check_global_consensus_validity(ms)?;
         Self::check_global_policy_validity(ms)?;
@@ -267,7 +274,7 @@ where
     /// Check the consensus + policy(if not disabled) rules including the
     /// ones for satisfaction
     fn check_local_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Self::check_global_consensus_validity(ms)?;
         Self::check_global_policy_validity(ms)?;
@@ -277,7 +284,7 @@ where
     }
 
     /// Check whether the top-level is type B
-    fn top_level_type_check<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Result<(), Error> {
+    fn top_level_type_check<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Result<(), Error> {
         if ms.ty.corr.base != types::Base::B {
             return Err(Error::NonTopLevel(format!("{:?}", ms)));
         }
@@ -315,7 +322,7 @@ where
     }
 
     /// Other top level checks that are context specific
-    fn other_top_level_checks<Pk: MiniscriptKey>(_ms: &Miniscript<Pk, Self>) -> Result<(), Error> {
+    fn other_top_level_checks<Pk: MiniscriptKey>(_ms: &MsUnChecked<Pk>) -> Result<(), Error> {
         Ok(())
     }
 
@@ -328,7 +335,7 @@ where
     // that are only applicable at the top-level
     // We can also combine the top-level check for Base::B here
     // even though it does not depend on context, but helps in cleaner code
-    fn top_level_checks<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Result<(), Error> {
+    fn top_level_checks<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Result<(), Error> {
         Self::top_level_type_check(ms)?;
         Self::other_top_level_checks(ms)
     }
@@ -367,7 +374,7 @@ pub enum Legacy {}
 impl ScriptContext for Legacy {
     type Key = bitcoin::PublicKey;
     fn check_terminal_non_malleable<Pk: MiniscriptKey>(
-        frag: &Terminal<Pk, Self>,
+        frag: &Terminal<Pk>,
     ) -> Result<(), ScriptContextError> {
         match *frag {
             Terminal::PkH(ref _pkh) => Err(ScriptContextError::MalleablePkH),
@@ -397,7 +404,7 @@ impl ScriptContext for Legacy {
     }
 
     fn check_global_consensus_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         if ms.ext.pk_cost > MAX_SCRIPT_ELEMENT_SIZE {
             return Err(ScriptContextError::MaxRedeemScriptSizeExceeded);
@@ -420,7 +427,7 @@ impl ScriptContext for Legacy {
     }
 
     fn check_local_consensus_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         match ms.ext.ops.op_count() {
             None => Err(ScriptContextError::MaxOpCountExceeded),
@@ -432,7 +439,7 @@ impl ScriptContext for Legacy {
     }
 
     fn check_local_policy_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         // Legacy scripts permit upto 1000 stack elements, 520 bytes consensus limits
         // on P2SH size, it is not possible to reach the 1000 elements limit and hence
@@ -446,7 +453,7 @@ impl ScriptContext for Legacy {
         }
     }
 
-    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Option<usize> {
+    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Option<usize> {
         // The scriptSig cost is the second element of the tuple
         ms.ext.max_sat_size.map(|x| x.1)
     }
@@ -471,7 +478,7 @@ pub enum Segwitv0 {}
 impl ScriptContext for Segwitv0 {
     type Key = bitcoin::PublicKey;
     fn check_terminal_non_malleable<Pk: MiniscriptKey>(
-        _frag: &Terminal<Pk, Self>,
+        _frag: &Terminal<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
@@ -498,7 +505,7 @@ impl ScriptContext for Segwitv0 {
     }
 
     fn check_global_consensus_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         if ms.ext.pk_cost > MAX_SCRIPT_SIZE {
             return Err(ScriptContextError::MaxWitnessScriptSizeExceeded);
@@ -521,7 +528,7 @@ impl ScriptContext for Segwitv0 {
     }
 
     fn check_local_consensus_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         match ms.ext.ops.op_count() {
             None => Err(ScriptContextError::MaxOpCountExceeded),
@@ -533,7 +540,7 @@ impl ScriptContext for Segwitv0 {
     }
 
     fn check_global_policy_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         if ms.ext.pk_cost > MAX_STANDARD_P2WSH_SCRIPT_SIZE {
             return Err(ScriptContextError::MaxWitnessScriptSizeExceeded);
@@ -542,7 +549,7 @@ impl ScriptContext for Segwitv0 {
     }
 
     fn check_local_policy_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         // We don't need to know if this is actually a p2wsh as the standard satisfaction for
         // other Segwitv0 defined programs all require (much) less than 100 elements.
@@ -560,7 +567,7 @@ impl ScriptContext for Segwitv0 {
         }
     }
 
-    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Option<usize> {
+    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Option<usize> {
         // The witness stack cost is the first element of the tuple
         ms.ext.max_sat_size.map(|x| x.0)
     }
@@ -579,7 +586,7 @@ pub enum Tap {}
 impl ScriptContext for Tap {
     type Key = bitcoin::secp256k1::XOnlyPublicKey;
     fn check_terminal_non_malleable<Pk: MiniscriptKey>(
-        _frag: &Terminal<Pk, Self>,
+        _frag: &Terminal<Pk>,
     ) -> Result<(), ScriptContextError> {
         // No fragment is malleable in tapscript context.
         // Certain fragments like Multi are invalid, but are not malleable
@@ -607,7 +614,7 @@ impl ScriptContext for Tap {
     }
 
     fn check_global_consensus_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         // No script size checks for global consensus rules
         // Should we really check for block limits here.
@@ -632,7 +639,7 @@ impl ScriptContext for Tap {
     }
 
     fn check_local_consensus_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         // Taproot introduces the concept of sigops budget.
         // All valid miniscripts satisfy the sigops constraint
@@ -656,19 +663,19 @@ impl ScriptContext for Tap {
     }
 
     fn check_global_policy_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         // No script rules, rules are subject to entire tx rules
         Ok(())
     }
 
     fn check_local_policy_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
 
-    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Option<usize> {
+    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Option<usize> {
         // The witness stack cost is the first element of the tuple
         ms.ext.max_sat_size.map(|x| x.0)
     }
@@ -690,7 +697,7 @@ pub enum BareCtx {}
 impl ScriptContext for BareCtx {
     type Key = bitcoin::PublicKey;
     fn check_terminal_non_malleable<Pk: MiniscriptKey>(
-        _frag: &Terminal<Pk, Self>,
+        _frag: &Terminal<Pk>,
     ) -> Result<(), ScriptContextError> {
         // Bare fragments can't contain miniscript because of standardness rules
         // This function is only used in compiler which already checks the standardness
@@ -709,7 +716,7 @@ impl ScriptContext for BareCtx {
     }
 
     fn check_global_consensus_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         if ms.ext.pk_cost > MAX_SCRIPT_SIZE {
             return Err(ScriptContextError::MaxWitnessScriptSizeExceeded);
@@ -731,7 +738,7 @@ impl ScriptContext for BareCtx {
     }
 
     fn check_local_consensus_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         match ms.ext.ops.op_count() {
             None => Err(ScriptContextError::MaxOpCountExceeded),
@@ -742,7 +749,7 @@ impl ScriptContext for BareCtx {
         }
     }
 
-    fn other_top_level_checks<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Result<(), Error> {
+    fn other_top_level_checks<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Result<(), Error> {
         match &ms.node {
             Terminal::Check(ref ms) => match &ms.node {
                 Terminal::RawPkH(_pkh) => Ok(()),
@@ -754,7 +761,7 @@ impl ScriptContext for BareCtx {
         }
     }
 
-    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Option<usize> {
+    fn max_satisfaction_size<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Option<usize> {
         // The witness stack cost is the first element of the tuple
         ms.ext.max_sat_size.map(|x| x.1)
     }
@@ -783,7 +790,7 @@ impl ScriptContext for NoChecks {
     // todo: When adding support for interpreter, we need a enum with all supported keys here
     type Key = bitcoin::PublicKey;
     fn check_terminal_non_malleable<Pk: MiniscriptKey>(
-        _frag: &Terminal<Pk, Self>,
+        _frag: &Terminal<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
@@ -792,30 +799,30 @@ impl ScriptContext for NoChecks {
     fn check_pk<Pk: MiniscriptKey>(_pk: &Pk) -> Result<(), ScriptContextError> { Ok(()) }
 
     fn check_global_policy_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
 
     fn check_global_consensus_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
 
     fn check_local_policy_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
 
     fn check_local_consensus_validity<Pk: MiniscriptKey>(
-        _ms: &Miniscript<Pk, Self>,
+        _ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Ok(())
     }
 
-    fn max_satisfaction_size<Pk: MiniscriptKey>(_ms: &Miniscript<Pk, Self>) -> Option<usize> {
+    fn max_satisfaction_size<Pk: MiniscriptKey>(_ms: &MsUnChecked<Pk>) -> Option<usize> {
         panic!("Tried to compute a satisfaction size bound on a no-checks ecdsa miniscript")
     }
 
@@ -836,7 +843,7 @@ impl ScriptContext for NoChecks {
     }
 
     fn check_global_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Self::check_global_consensus_validity(ms)?;
         Self::check_global_policy_validity(ms)?;
@@ -844,7 +851,7 @@ impl ScriptContext for NoChecks {
     }
 
     fn check_local_validity<Pk: MiniscriptKey>(
-        ms: &Miniscript<Pk, Self>,
+        ms: &MsUnChecked<Pk>,
     ) -> Result<(), ScriptContextError> {
         Self::check_global_consensus_validity(ms)?;
         Self::check_global_policy_validity(ms)?;
@@ -853,18 +860,18 @@ impl ScriptContext for NoChecks {
         Ok(())
     }
 
-    fn top_level_type_check<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Result<(), Error> {
+    fn top_level_type_check<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Result<(), Error> {
         if ms.ty.corr.base != types::Base::B {
             return Err(Error::NonTopLevel(format!("{:?}", ms)));
         }
         Ok(())
     }
 
-    fn other_top_level_checks<Pk: MiniscriptKey>(_ms: &Miniscript<Pk, Self>) -> Result<(), Error> {
+    fn other_top_level_checks<Pk: MiniscriptKey>(_ms: &MsUnChecked<Pk>) -> Result<(), Error> {
         Ok(())
     }
 
-    fn top_level_checks<Pk: MiniscriptKey>(ms: &Miniscript<Pk, Self>) -> Result<(), Error> {
+    fn top_level_checks<Pk: MiniscriptKey>(ms: &MsUnChecked<Pk>) -> Result<(), Error> {
         Self::top_level_type_check(ms)?;
         Self::other_top_level_checks(ms)
     }
@@ -884,4 +891,16 @@ mod private {
     impl Sealed for Segwitv0 {}
     impl Sealed for Tap {}
     impl Sealed for NoChecks {}
+}
+
+impl ScriptContextEnum {
+
+    pub(crate) fn pk_len<Pk: MiniscriptKey>(self, pk: &Pk) -> usize {
+        match self {
+            ScriptContextEnum::Bare => BareCtx::pk_len(pk),
+            ScriptContextEnum::P2Sh => Legacy::pk_len(pk),
+            ScriptContextEnum::Segwitv0 => Segwitv0::pk_len(pk),
+            ScriptContextEnum::TapScript => Tap::pk_len(pk),
+        }
+    } 
 }

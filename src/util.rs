@@ -8,8 +8,9 @@ use bitcoin::PubkeyHash;
 
 use crate::miniscript::context;
 use crate::miniscript::satisfy::Placeholder;
+use crate::miniscript::types::ScriptContextEnum;
 use crate::prelude::*;
-use crate::{MiniscriptKey, ScriptContext, ToPublicKey};
+use crate::{MiniscriptKey, ToPublicKey};
 pub(crate) fn varint_len(n: usize) -> usize { bitcoin::VarInt(n as u64).size() }
 
 pub(crate) trait ItemSize {
@@ -64,36 +65,32 @@ pub(crate) fn witness_to_scriptsig(witness: &[Vec<u8>]) -> ScriptBuf {
 // trait for pushing key that depend on context
 pub(crate) trait MsKeyBuilder {
     /// Serialize the key as bytes based on script context. Used when encoding miniscript into bitcoin script
-    fn push_ms_key<Pk, Ctx>(self, key: &Pk) -> Self
+    fn push_ms_key<Pk>(self, key: &Pk, ctx: ScriptContextEnum) -> Self
     where
-        Pk: ToPublicKey,
-        Ctx: ScriptContext;
+        Pk: ToPublicKey;
 
     /// Serialize the key hash as bytes based on script context. Used when encoding miniscript into bitcoin script
-    fn push_ms_key_hash<Pk, Ctx>(self, key: &Pk) -> Self
+    fn push_ms_key_hash<Pk>(self, key: &Pk, ctx: ScriptContextEnum) -> Self
     where
-        Pk: ToPublicKey,
-        Ctx: ScriptContext;
+        Pk: ToPublicKey;
 }
 
 impl MsKeyBuilder for script::Builder {
-    fn push_ms_key<Pk, Ctx>(self, key: &Pk) -> Self
+    fn push_ms_key<Pk>(self, key: &Pk, ctx: ScriptContextEnum) -> Self
     where
         Pk: ToPublicKey,
-        Ctx: ScriptContext,
     {
-        match Ctx::sig_type() {
+        match ctx.sig_type() {
             context::SigType::Ecdsa => self.push_key(&key.to_public_key()),
             context::SigType::Schnorr => self.push_slice(key.to_x_only_pubkey().serialize()),
         }
     }
 
-    fn push_ms_key_hash<Pk, Ctx>(self, key: &Pk) -> Self
+    fn push_ms_key_hash<Pk>(self, key: &Pk, ctx: ScriptContextEnum) -> Self
     where
         Pk: ToPublicKey,
-        Ctx: ScriptContext,
     {
-        match Ctx::sig_type() {
+        match ctx.sig_type() {
             context::SigType::Ecdsa => self.push_slice(key.to_public_key().pubkey_hash()),
             context::SigType::Schnorr => {
                 self.push_slice(PubkeyHash::hash(&key.to_x_only_pubkey().serialize()))

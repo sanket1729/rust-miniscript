@@ -15,9 +15,9 @@ use bitcoin::hashes::{hash160, ripemd160, sha256, Hash};
 use bitcoin::{absolute, secp256k1, sighash, taproot, Sequence, TxOut, Witness};
 
 use crate::miniscript::context::{NoChecks, SigType};
-use crate::miniscript::ScriptContext;
+use crate::miniscript::{MsUnChecked, ScriptContext};
 use crate::prelude::*;
-use crate::{hash256, Descriptor, Miniscript, Terminal, ToPublicKey};
+use crate::{hash256, Descriptor, Terminal, ToPublicKey};
 
 mod error;
 mod inner;
@@ -485,7 +485,7 @@ pub enum SatisfiedConstraint {
 ///depending on evaluation of the children.
 struct NodeEvaluationState<'intp> {
     ///The node which is being evaluated
-    node: &'intp Miniscript<BitcoinKey, NoChecks>,
+    node: &'intp MsUnChecked<BitcoinKey>,
     ///number of children evaluated
     n_evaluated: usize,
     ///number of children satisfied
@@ -542,7 +542,7 @@ where
     /// Helper function to push a NodeEvaluationState on state stack
     fn push_evaluation_state(
         &mut self,
-        node: &'intp Miniscript<BitcoinKey, NoChecks>,
+        node: &'intp MsUnChecked<BitcoinKey>,
         n_evaluated: usize,
         n_satisfied: usize,
     ) {

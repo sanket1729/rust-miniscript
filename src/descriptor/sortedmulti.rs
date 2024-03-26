@@ -47,8 +47,8 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         // Check the limits before creating a new SortedMultiVec
         // For example, under p2sh context the scriptlen can only be
         // upto 520 bytes.
-        let term: Terminal<Pk, Ctx> = Terminal::Multi(k, pks.clone());
-        let ms = Miniscript::from_ast(term)?;
+        let term: Terminal<Pk> = Terminal::Multi(k, pks.clone());
+        let ms: Miniscript<Pk, Ctx> = Miniscript::from_ast(term)?;
 
         // This would check all the consensus rules for p2sh/p2wsh and
         // even tapscript in future
@@ -114,7 +114,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
 
 impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
     /// Create Terminal::Multi containing sorted pubkeys
-    pub fn sorted_node(&self) -> Terminal<Pk, Ctx>
+    pub fn sorted_node(&self) -> Terminal<Pk>
     where
         Pk: ToPublicKey,
     {
@@ -136,7 +136,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         Pk: ToPublicKey,
     {
         self.sorted_node()
-            .encode(script::Builder::new())
+            .encode_with_ctx(script::Builder::new(), Ctx::context_enum())
             .into_script()
     }
 
@@ -147,7 +147,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         Pk: ToPublicKey,
         S: Satisfier<Pk>,
     {
-        let ms = Miniscript::from_ast(self.sorted_node()).expect("Multi node typecheck");
+        let ms: Miniscript<Pk, Ctx> = Miniscript::from_ast(self.sorted_node()).expect("Multi node typecheck");
         ms.satisfy(satisfier)
     }
 
@@ -157,7 +157,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> SortedMultiVec<Pk, Ctx> {
         Pk: ToPublicKey,
         P: AssetProvider<Pk>,
     {
-        let ms = Miniscript::from_ast(self.sorted_node()).expect("Multi node typecheck");
+        let ms = Miniscript::<Pk, Ctx>::from_ast(self.sorted_node()).expect("Multi node typecheck");
         ms.build_template(provider)
     }
 

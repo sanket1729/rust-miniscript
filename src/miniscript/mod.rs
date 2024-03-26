@@ -12,7 +12,6 @@
 //! components of the AST.
 //!
 
-use core::marker::PhantomData;
 use core::{fmt, hash, str};
 
 use bitcoin::hashes::hash160;
@@ -40,7 +39,7 @@ use core::cmp;
 use sync::Arc;
 
 use self::lex::{lex, TokenIter};
-use self::types::Property;
+use self::types::{Property, ScriptContextEnum};
 pub use crate::miniscript::context::ScriptContext;
 use crate::miniscript::decode::Terminal;
 use crate::miniscript::types::extra_props::ExtData;
@@ -52,30 +51,74 @@ use crate::{
 mod ms_tests;
 
 /// The top-level miniscript abstract syntax tree (AST).
+///
+/// This does not do any context checks or type checking. This is only useful
+/// when you want to programmatically construct a Miniscript AST. For all
+/// other purposes, parsing from string, you should use [`Miniscript`].
 #[derive(Clone)]
-pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext> {
+pub struct MsUnChecked<Pk: MiniscriptKey> {
     /// A node in the AST.
-    pub node: Terminal<Pk, Ctx>,
+    pub node: Terminal<Pk>,
     /// The correctness and malleability type information for the AST node.
     pub ty: types::Type,
     /// Additional information helpful for extra analysis.
     pub ext: types::extra_props::ExtData,
-    /// Context PhantomData. Only accessible inside this crate
-    phantom: PhantomData<Ctx>,
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+mod private {
+    use core::marker::PhantomData;
+
+    use crate::{MiniscriptKey, ScriptContext};
+
+    use super::MsUnChecked;
+
+    /// Doc
+
+    #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+    pub struct Miniscript<Pk: MiniscriptKey, Ctx: ScriptContext> {
+    /// A node in the AST.
+        pub inner: MsUnChecked<Pk>,
+        /// Context PhantomData. Only accessible inside this crate
+        phantom: PhantomData<Ctx>,
+    }
+
+    impl <Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+        /// Constructs a new Miniscript from an unchecked AST node.
+        // 
+        // Implementation note:
+        // This is the one and only one contructor to the miniscript class. We make sure that
+        // all context invariants are correctly respected.
+        pub fn from_unchecked(unchecked: MsUnChecked<Pk>) -> Self {
+            // Ctx::check_global_consensus_validity(&unchecked)?;
+            // All checks on context here.
+            Miniscript { inner: unchecked, phantom: PhantomData }
+        }
+    }
+
+    impl<Pk: MiniscriptKey> MsUnChecked<Pk> {
+        /// Constructs a new Miniscript from an unchecked AST node.
+        pub fn into_ms<Ctx: ScriptContext>(self) -> Miniscript<Pk, Ctx> {
+            // Ctx::check_global_consensus_validity(&unchecked).expect("invalid global consensus");
+            Miniscript { inner: self, phantom: PhantomData }
+        }
+    }
+}
+
+pub use private::Miniscript;
+
+impl<Pk: MiniscriptKey, Ctx: ScriptContext> core::ops::Deref for Miniscript<Pk, Ctx> {
+    type Target = MsUnChecked<Pk>;
+
+    fn deref(&self) -> &Self::Target { &self.inner }
+}
+
+impl<Pk: MiniscriptKey> MsUnChecked<Pk> {
+
     /// Add type information(Type and Extdata) to Miniscript based on
     /// `AstElem` fragment. Dependent on display and clone because of Error
     /// Display code of type_check.
-    pub fn from_ast(t: Terminal<Pk, Ctx>) -> Result<Miniscript<Pk, Ctx>, Error> {
-        let res = Miniscript {
-            ty: Type::type_check(&t)?,
-            ext: ExtData::type_check(&t)?,
-            node: t,
-            phantom: PhantomData,
-        };
-        Ctx::check_global_consensus_validity(&res)?;
+    pub fn from_ast(t: Terminal<Pk>, ctx: ScriptContextEnum) -> Result<MsUnChecked<Pk>, Error> {
+        let res = MsUnChecked { ty: Type::type_check(&t, ctx)?, ext: ExtData::type_check(&t, ctx)?, node: t };
         Ok(res)
     }
 
@@ -85,25 +128,60 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
     ///
     /// You should almost always use `Miniscript::from_ast` instead of this function.
     pub fn from_components_unchecked(
-        node: Terminal<Pk, Ctx>,
+        node: Terminal<Pk>,
         ty: types::Type,
         ext: types::extra_props::ExtData,
-    ) -> Miniscript<Pk, Ctx> {
-        Miniscript { node, ty, ext, phantom: PhantomData }
+    ) -> MsUnChecked<Pk> {
+        MsUnChecked { node, ty, ext }
     }
 
+
+    /// Returns the max satisfaction size of this [`MsUnChecked<Pk>`].
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if .
+    pub fn max_satisfaction_size(&self) -> Result<usize, Error> {
+        // Ctx::max_satisfaction_size(self).ok_or(Error::ImpossibleSatisfaction)
+        todo!()
+    }
+
+    /// Returns the max satisfaction witness elements of this [`MsUnChecked<Pk>`].
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if .
+    pub fn max_satisfaction_witness_elements(&self) -> Result<usize, Error> {
+        self.ext
+            .stack_elem_count_sat
+            .map(|x| x + 1)
+            .ok_or(Error::ImpossibleSatisfaction)
+    }
+}
+
+impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
+
+    /// .
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if .
+    pub fn from_ast(term: Terminal<Pk>) -> Result<Self, Error> {
+        let ms_unchecked = MsUnChecked::from_ast(term, Ctx::context_enum())?;
+        Ok(ms_unchecked.into_ms())
+    }
     /// Extracts the `AstElem` representing the root of the miniscript
-    pub fn into_inner(self) -> Terminal<Pk, Ctx> { self.node }
+    pub fn into_inner(self) -> Terminal<Pk> { self.inner.node }
 
     /// Get a reference to the inner `AstElem` representing the root of miniscript
-    pub fn as_inner(&self) -> &Terminal<Pk, Ctx> { &self.node }
+    pub fn as_inner(&self) -> &Terminal<Pk> { &self.node }
 
     /// Encode as a Bitcoin script
     pub fn encode(&self) -> script::ScriptBuf
     where
         Pk: ToPublicKey,
     {
-        self.node.encode(script::Builder::new()).into_script()
+        self.node.encode_with_ctx(script::Builder::new(), Ctx::context_enum()).into_script()
     }
 
     /// Size, in bytes of the script-pubkey. If this Miniscript is used outside
@@ -195,7 +273,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         // Only satisfactions for default versions (0xc0) are allowed.
         let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript);
         let satisfaction =
-            satisfy::Satisfaction::satisfy(&self.node, &satisfier, self.ty.mall.safe, &leaf_hash);
+            satisfy::Satisfaction::satisfy(&self.node, &satisfier, self.ty.mall.safe, &leaf_hash, Ctx::context_enum());
         self._satisfy(satisfaction)
     }
 
@@ -209,11 +287,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         Pk: ToPublicKey,
     {
         let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript);
-        let satisfaction = satisfy::Satisfaction::satisfy_mall(
+        let satisfaction = satisfy::Satisfaction::satisfy_mall::<Ctx, _, _>(
             &self.node,
             &satisfier,
             self.ty.mall.safe,
             &leaf_hash,
+            Ctx::context_enum(),
         );
         self._satisfy(satisfaction)
     }
@@ -242,7 +321,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
         Pk: ToPublicKey,
     {
         let leaf_hash = TapLeafHash::from_script(&self.encode(), LeafVersion::TapScript);
-        satisfy::Satisfaction::build_template(&self.node, provider, self.ty.mall.safe, &leaf_hash)
+        satisfy::Satisfaction::build_template(&self.node, provider, self.ty.mall.safe, &leaf_hash, Ctx::context_enum())
     }
 
     /// Attempt to produce a malleable witness template given the assets available
@@ -259,6 +338,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
             provider,
             self.ty.mall.safe,
             &leaf_hash,
+            Ctx::context_enum()
         )
     }
 }
@@ -289,11 +369,11 @@ impl<Ctx: ScriptContext> Miniscript<Ctx::Key, Ctx> {
         let tokens = lex(script)?;
         let mut iter = TokenIter::new(tokens);
 
-        let top = decode::parse(&mut iter)?;
-        Ctx::check_global_validity(&top)?;
-        let type_check = types::Type::type_check(&top.node)?;
+        let top_unchecked = decode::parse(&mut iter, Ctx::context_enum())?;
+        let top = Miniscript::<Ctx::Key, Ctx>::from_unchecked(top_unchecked);
+        let type_check = types::Type::type_check(&top.node, Ctx::context_enum())?;
         if type_check.corr.base != types::Base::B {
-            return Err(Error::NonTopLevel(format!("{:?}", top)));
+            return Err(Error::NonTopLevel(format!("{:?}", top.inner)));
         };
         if let Some(leading) = iter.next() {
             Err(Error::Trailing(leading.to_string()))
@@ -345,8 +425,8 @@ impl<Ctx: ScriptContext> Miniscript<Ctx::Key, Ctx> {
 /// `PartialOrd` of `Miniscript` must depend only on node and not the type information.
 ///
 /// The type information and extra properties are implied by the AST.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> PartialOrd for Miniscript<Pk, Ctx> {
-    fn partial_cmp(&self, other: &Miniscript<Pk, Ctx>) -> Option<cmp::Ordering> {
+impl<Pk: MiniscriptKey> PartialOrd for MsUnChecked<Pk> {
+    fn partial_cmp(&self, other: &MsUnChecked<Pk>) -> Option<cmp::Ordering> {
         Some(self.node.cmp(&other.node))
     }
 }
@@ -354,38 +434,38 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> PartialOrd for Miniscript<Pk, Ctx> {
 /// `Ord` of `Miniscript` must depend only on node and not the type information.
 ///
 /// The type information and extra properties are implied by the AST.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Ord for Miniscript<Pk, Ctx> {
-    fn cmp(&self, other: &Miniscript<Pk, Ctx>) -> cmp::Ordering { self.node.cmp(&other.node) }
+impl<Pk: MiniscriptKey> Ord for MsUnChecked<Pk> {
+    fn cmp(&self, other: &MsUnChecked<Pk>) -> cmp::Ordering { self.node.cmp(&other.node) }
 }
 
 /// `PartialEq` of `Miniscript` must depend only on node and not the type information.
 ///
 /// The type information and extra properties are implied by the AST.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> PartialEq for Miniscript<Pk, Ctx> {
-    fn eq(&self, other: &Miniscript<Pk, Ctx>) -> bool { self.node.eq(&other.node) }
+impl<Pk: MiniscriptKey> PartialEq for MsUnChecked<Pk> {
+    fn eq(&self, other: &MsUnChecked<Pk>) -> bool { self.node.eq(&other.node) }
 }
 
 /// `Eq` of `Miniscript` must depend only on node and not the type information.
 ///
 /// The type information and extra properties are implied by the AST.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Eq for Miniscript<Pk, Ctx> {}
+impl<Pk: MiniscriptKey> Eq for MsUnChecked<Pk> {}
 
 /// `Hash` of `Miniscript` must depend only on node and not the type information.
 ///
 /// The type information and extra properties are implied by the AST.
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> hash::Hash for Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey> hash::Hash for MsUnChecked<Pk> {
     fn hash<H: hash::Hasher>(&self, state: &mut H) { self.node.hash(state); }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Debug for Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey> fmt::Debug for MsUnChecked<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{:?}", self.node) }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey> fmt::Display for MsUnChecked<Pk> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self.node) }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for Miniscript<Pk, Ctx> {
+impl<Pk: MiniscriptKey> ForEachKey<Pk> for MsUnChecked<Pk> {
     fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, mut pred: F) -> bool {
         for ms in self.pre_order_iter() {
             match ms.node {
@@ -408,6 +488,16 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for Miniscript<Pk, Ct
             }
         }
         true
+    }
+}
+
+impl <Pk: MiniscriptKey, Ctx: ScriptContext> fmt::Display for Miniscript<Pk, Ctx> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self.node) }
+}
+
+impl <Pk: MiniscriptKey, Ctx: ScriptContext> ForEachKey<Pk> for Miniscript<Pk, Ctx> {
+    fn for_each_key<'a, F: FnMut(&'a Pk) -> bool>(&'a self, pred: F) -> bool {
+        self.inner.for_any_key(pred)
     }
 }
 
@@ -481,11 +571,13 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
                     Terminal::MultiA(k, keys?)
                 }
             };
-            let new_ms = Miniscript::from_ast(new_term).map_err(TranslateErr::OuterError)?;
+            let new_ms = MsUnChecked::from_ast(new_term, CtxQ::context_enum()).map_err(TranslateErr::OuterError)?;
             translated.push(Arc::new(new_ms));
         }
 
-        Ok(Arc::try_unwrap(translated.pop().unwrap()).unwrap())
+        Ok(Arc::try_unwrap(translated.pop().unwrap())
+            .unwrap()
+            .into_ms())
     }
 
     /// Substitutes raw public keys hashes with the public keys as provided by map.
@@ -501,11 +593,12 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Miniscript<Pk, Ctx> {
                 data.node.node.clone()
             };
 
-            let new_ms = Miniscript::from_ast(new_term).expect("typeck");
+            // I think is wrong. We should be using translated somewhere. Wonder how our testcases are passing.
+            let new_ms = MsUnChecked::from_ast(new_term, Ctx::context_enum()).expect("typeck");
             translated.push(Arc::new(new_ms));
         }
 
-        Arc::try_unwrap(translated.pop().unwrap()).unwrap()
+        Miniscript::from_unchecked(Arc::try_unwrap(translated.pop().unwrap()).unwrap())
     }
 }
 
@@ -537,7 +630,8 @@ impl_block_str!(
     {
         // This checks for invalid ASCII chars
         let top = expression::Tree::from_str(s)?;
-        let ms: Miniscript<Pk, Ctx> = expression::FromTree::from_tree(&top)?;
+        let ms_uncheckeds = MsUnChecked::from_tree_with_ctx(&top, Ctx::context_enum())?;
+        let ms = Miniscript::from_unchecked(ms_uncheckeds);
         ms.ext_check(ext)?;
 
         if ms.ty.corr.base != types::Base::B {
@@ -552,18 +646,25 @@ impl_from_tree!(
     ;Ctx; ScriptContext,
     Arc<Miniscript<Pk, Ctx>>,
     fn from_tree(top: &expression::Tree) -> Result<Arc<Miniscript<Pk, Ctx>>, Error> {
-        Ok(Arc::new(expression::FromTree::from_tree(top)?))
+        Ok(Arc::new(Miniscript::from_unchecked(MsUnChecked::from_tree_with_ctx(top, Ctx::context_enum())?)))
     }
 );
 
 impl_from_tree!(
     ;Ctx; ScriptContext,
     Miniscript<Pk, Ctx>,
+    fn from_tree(top: &expression::Tree) -> Result<Miniscript<Pk, Ctx>, Error> {
+        Ok(Miniscript::from_unchecked(MsUnChecked::from_tree_with_ctx(top, Ctx::context_enum())?))
+    }
+);
+
+impl_block_str!(
+    MsUnChecked<Pk>,
     /// Parse an expression tree into a Miniscript. As a general rule, this
     /// should not be called directly; rather go through the descriptor API.
-    fn from_tree(top: &expression::Tree) -> Result<Miniscript<Pk, Ctx>, Error> {
-        let inner: Terminal<Pk, Ctx> = expression::FromTree::from_tree(top)?;
-        Miniscript::from_ast(inner)
+    fn from_tree_with_ctx(top: &expression::Tree, ctx: ScriptContextEnum, ) -> Result<MsUnChecked<Pk>, Error> {
+        let inner = Terminal::<Pk>::from_tree_with_ctx(top, ctx).expect("FIXME");
+        MsUnChecked::from_ast(inner, ctx)
     }
 );
 
@@ -596,7 +697,6 @@ pub mod hash256 {
 #[cfg(test)]
 mod tests {
 
-    use core::marker::PhantomData;
     use core::str;
     use core::str::FromStr;
 
@@ -607,8 +707,8 @@ mod tests {
     use sync::Arc;
 
     use super::{Miniscript, ScriptContext, Segwitv0, Tap};
-    use crate::miniscript::types::{self, ExtData, Property, Type};
-    use crate::miniscript::Terminal;
+    use crate::miniscript::types::{self, ExtData, Property, ScriptContextEnum, Type};
+    use crate::miniscript::{MsUnChecked, Terminal};
     use crate::policy::Liftable;
     use crate::prelude::*;
     use crate::test_utils::{StrKeyTranslator, StrXOnlyKeyTranslator};
@@ -793,20 +893,18 @@ mod tests {
         .unwrap();
         let hash = hash160::Hash::from_byte_array([17; 20]);
 
-        let pk_node = Terminal::Check(Arc::new(Miniscript {
+        let pk_node = Terminal::Check(Arc::new(MsUnChecked {
             node: Terminal::PkK(String::from("")),
-            ty: Type::from_pk_k::<Segwitv0>(),
-            ext: types::extra_props::ExtData::from_pk_k::<Segwitv0>(),
-            phantom: PhantomData,
+            ty: Type::from_pk_k(ScriptContextEnum::Segwitv0),
+            ext: types::extra_props::ExtData::from_pk_k(ScriptContextEnum::Segwitv0),
         }));
         let pkk_ms: Miniscript<String, Segwitv0> = Miniscript::from_ast(pk_node).unwrap();
         dummy_string_rtt(pkk_ms, "[B/onduesm]c:[K/onduesm]pk_k(\"\")", "pk()");
 
-        let pkh_node = Terminal::Check(Arc::new(Miniscript {
+        let pkh_node = Terminal::Check(Arc::new(MsUnChecked {
             node: Terminal::PkH(String::from("")),
-            ty: Type::from_pk_h::<Segwitv0>(),
-            ext: types::extra_props::ExtData::from_pk_h::<Segwitv0>(),
-            phantom: PhantomData,
+            ty: Type::from_pk_h(ScriptContextEnum::Segwitv0),
+            ext: types::extra_props::ExtData::from_pk_h(ScriptContextEnum::Segwitv0),
         }));
         let pkh_ms: Miniscript<String, Segwitv0> = Miniscript::from_ast(pkh_node).unwrap();
 
@@ -823,11 +921,10 @@ mod tests {
             assert_eq!(display, expected);
         }
 
-        let pkk_node = Terminal::Check(Arc::new(Miniscript {
+        let pkk_node = Terminal::Check(Arc::new(MsUnChecked {
             node: Terminal::PkK(pk),
-            ty: Type::from_pk_k::<Segwitv0>(),
-            ext: types::extra_props::ExtData::from_pk_k::<Segwitv0>(),
-            phantom: PhantomData,
+            ty: Type::from_pk_k(ScriptContextEnum::Segwitv0),
+            ext: types::extra_props::ExtData::from_pk_k(ScriptContextEnum::Segwitv0),
         }));
         let pkk_ms: Segwitv0Script = Miniscript::from_ast(pkk_node).unwrap();
 
@@ -837,17 +934,16 @@ mod tests {
              202020202ac",
         );
 
-        let pkh_ms: Segwitv0Script = Miniscript {
-            node: Terminal::Check(Arc::new(Miniscript {
+        let pkh_ms: Segwitv0Script = MsUnChecked {
+            node: Terminal::Check(Arc::new(MsUnChecked {
                 node: Terminal::RawPkH(hash),
-                ty: Type::from_pk_h::<Segwitv0>(),
-                ext: types::extra_props::ExtData::from_pk_h::<Segwitv0>(),
-                phantom: PhantomData,
+                ty: Type::from_pk_h(ScriptContextEnum::Segwitv0),
+                ext: types::extra_props::ExtData::from_pk_h(ScriptContextEnum::Segwitv0),
             })),
-            ty: Type::cast_check(Type::from_pk_h::<Segwitv0>()).unwrap(),
-            ext: ExtData::cast_check(ExtData::from_pk_h::<Segwitv0>()).unwrap(),
-            phantom: PhantomData,
-        };
+            ty: Type::cast_check(Type::from_pk_h(ScriptContextEnum::Segwitv0)).unwrap(),
+            ext: ExtData::cast_check(ExtData::from_pk_h(ScriptContextEnum::Segwitv0)).unwrap(),
+        }
+        .into_ms();
 
         script_rtt(pkh_ms, "76a914111111111111111111111111111111111111111188ac");
     }

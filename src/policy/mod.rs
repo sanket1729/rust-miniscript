@@ -113,7 +113,7 @@ impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Miniscript<Pk, Ctx>
     }
 }
 
-impl<Pk: MiniscriptKey, Ctx: ScriptContext> Liftable<Pk> for Terminal<Pk, Ctx> {
+impl<Pk: MiniscriptKey> Liftable<Pk> for Terminal<Pk> {
     fn lift(&self) -> Result<Semantic<Pk>, Error> {
         let ret = match *self {
             Terminal::PkK(ref pk) | Terminal::PkH(ref pk) => Semantic::Key(pk.clone()),

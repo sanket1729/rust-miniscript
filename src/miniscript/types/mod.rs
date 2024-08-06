@@ -204,6 +204,7 @@ impl<Pk: MiniscriptKey> error::Error for Error<Pk> {
 
 /// Internal only type used to convert [`MsUnchecked`] to [`Miniscript`].
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Ord, Eq, Hash)]
+#[non_exhaustive]
 pub enum ScriptContextEnum {
     /// Bare, as in Script pubkey
     Bare,

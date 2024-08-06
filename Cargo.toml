@@ -24,9 +24,10 @@ base64 = ["bitcoin/base64"]
 [profile.release]
 strip = true
 panic = "abort"
-opt-level = 's'
+opt-level = 'z'
 codegen-units = 1
 lto = true
+debug = false
 
 [dependencies]
 bech32 = { version = "0.10.0-beta", default-features = false }

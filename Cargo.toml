@@ -21,6 +21,13 @@ serde = ["actual-serde", "bitcoin/serde"]
 rand = ["bitcoin/rand"]
 base64 = ["bitcoin/base64"]
 
+[profile.release]
+strip = true
+panic = "abort"
+opt-level = 's'
+codegen-units = 1
+lto = true
+
 [dependencies]
 bech32 = { version = "0.10.0-beta", default-features = false }
 bitcoin = { version = "0.31.0", default-features = false }
